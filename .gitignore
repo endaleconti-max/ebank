@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv-1
+.venv-1-python314-backup/
+
+# Local service environments and data
+services/identity-service/.venv/
+services/identity-service/identity.db
+services/alias-service/.venv/
+services/alias-service/alias.db
+services/ledger-service/.venv/
+services/ledger-service/ledger.db
+services/payment-orchestrator/.venv/
+services/payment-orchestrator/orchestrator.db
+services/api-gateway/.venv/
+services/connector-gateway/.venv/
+services/connector-gateway/connector.db
+services/reconciliation-service/.venv/
+services/reconciliation-service/reconciliation.db

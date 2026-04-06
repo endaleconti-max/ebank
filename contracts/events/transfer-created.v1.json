@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ebank/contracts/events/transfer-created.v1.json",
+  "title": "TransferCreated",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "correlationId",
+    "payload"
+  ],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "eventType": { "const": "TransferCreated" },
+    "eventVersion": { "const": "1.0.0" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "payload": {
+      "type": "object",
+      "required": [
+        "transferId",
+        "senderUserId",
+        "recipientAliasId",
+        "currency",
+        "amountMinor"
+      ],
+      "properties": {
+        "transferId": { "type": "string", "format": "uuid" },
+        "senderUserId": { "type": "string", "format": "uuid" },
+        "recipientAliasId": { "type": "string", "format": "uuid" },
+        "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+        "amountMinor": { "type": "integer", "minimum": 1 },
+        "idempotencyKey": { "type": "string", "minLength": 8 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

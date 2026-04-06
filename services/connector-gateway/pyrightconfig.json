@@ -1,0 +1,7 @@
+{
+  "include": ["app", "tests"],
+  "typeCheckingMode": "off",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "exclude": [".venv"]
+}

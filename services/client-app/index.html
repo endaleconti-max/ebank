@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>eBank - Send Money</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-left"></div>
+    <div class="ambient ambient-right"></div>
+
+    <main class="layout">
+      <header class="topbar card">
+        <div>
+          <p class="eyebrow">Customer App</p>
+          <h1>eBank Pay</h1>
+        </div>
+        <div class="gateway-status" id="gatewayStatus">Checking API gateway...</div>
+      </header>
+
+      <section class="card send-panel">
+        <div class="panel-head">
+          <h2>Send money</h2>
+          <p>Fast transfer by mobile number.</p>
+        </div>
+        <form id="transferForm" class="form-grid" novalidate>
+          <label>
+            Sender ID
+            <input id="senderUserId" name="senderUserId" placeholder="user-001" required maxlength="64" />
+          </label>
+          <label>
+            Recipient phone
+            <input id="recipientPhone" name="recipientPhone" placeholder="+15550005555" required pattern="^\+[1-9][0-9]{7,14}$" />
+          </label>
+          <label>
+            Amount
+            <input id="amount" name="amount" placeholder="25.50" required inputmode="decimal" />
+          </label>
+          <label>
+            Currency
+            <input id="currency" name="currency" value="USD" required minlength="3" maxlength="3" />
+          </label>
+          <label class="span-2">
+            Note
+            <input id="note" name="note" maxlength="140" placeholder="Dinner split" />
+          </label>
+          <button id="sendBtn" class="btn primary span-2" type="submit">Send transfer</button>
+        </form>
+        <p class="feedback" id="formFeedback" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="card list-panel">
+        <div class="panel-head">
+          <h2>Recent transfers</h2>
+          <button id="refreshListBtn" class="btn ghost" type="button">Refresh</button>
+        </div>
+        <div class="filters">
+          <input id="filterSender" placeholder="Filter by sender id" />
+          <select id="filterStatus">
+            <option value="">All statuses</option>
+            <option value="CREATED">CREATED</option>
+            <option value="VALIDATED">VALIDATED</option>
+            <option value="RESERVED">RESERVED</option>
+            <option value="SUBMITTED_TO_RAIL">SUBMITTED_TO_RAIL</option>
+            <option value="SETTLED">SETTLED</option>
+            <option value="FAILED">FAILED</option>
+          </select>
+          <button id="applyFiltersBtn" class="btn ghost" type="button">Apply</button>
+        </div>
+        <div id="transferList" class="transfer-list"></div>
+      </section>
+
+      <section class="card detail-panel">
+        <div class="panel-head">
+          <h2>Transfer details</h2>
+          <div class="detail-actions">
+            <button id="reloadDetailsBtn" class="btn ghost" type="button">Reload</button>
+            <button id="cancelTransferBtn" class="btn danger" type="button">Cancel transfer</button>
+          </div>
+        </div>
+        <div id="transferDetails" class="details-empty">Select a transfer to view details.</div>
+        <div>
+          <h3>Events</h3>
+          <ul id="eventsList" class="events"></ul>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

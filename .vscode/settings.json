@@ -1,0 +1,20 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/services/identity-service/.venv/bin/python",
+  "python.pythonPath": "${workspaceFolder}/services/identity-service/.venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/services/identity-service",
+    "${workspaceFolder}/services/alias-service",
+    "${workspaceFolder}/services/ledger-service",
+    "${workspaceFolder}/services/payment-orchestrator",
+    "${workspaceFolder}/services/connector-gateway",
+    "${workspaceFolder}/services/reconciliation-service"
+  ],
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.reportMissingImports": "none",
+  "python.analysis.reportMissingModuleSource": "none",
+  "gitdoc.commitDelay": 30000,
+  "gitdoc.autoPush": "onCommit",
+  "gitdoc.filePattern": "**/*",
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 5000
+}

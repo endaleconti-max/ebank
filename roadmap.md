@@ -3,6 +3,144 @@
 Date: 2026-04-05  
 Version: v1.1 (Living Roadmap)
 
+## Architecture Checkpoint (2026-04-05)
+Status: Architecture created and first services implemented.
+
+Artifacts created:
+1. docs/architecture/01-system-blueprint.md
+2. docs/architecture/02-service-contracts.md
+3. docs/architecture/03-ledger-model.md
+4. docs/architecture/04-event-catalog.md
+5. contracts/apis/create-transfer.request.v1.json
+6. contracts/apis/create-transfer.response.v1.json
+7. contracts/events/transfer-created.v1.json
+8. infra/docker-compose.dev.yml
+9. services/* core service responsibility briefs
+10. runnable identity-service with tests
+11. runnable alias-service with tests
+12. runnable ledger-service with invariant tests
+13. runnable payment-orchestrator with transfer transition tests
+14. runnable connector-gateway with mock adapter and callback simulation tests
+15. runnable reconciliation-service with mismatch detection tests
+16. cross-service contract test suite (tests/contract/) — 8 tests passing across 6 services
+17. runnable api-gateway with request tracing + idempotency middleware and proxy tests
+18. payment-orchestrator risk/compliance pre-check hooks with deterministic rule tests
+19. payment-orchestrator connector-gateway submission hook on RESERVED→SUBMITTED_TO_RAIL
+20. reconciliation-service source mode supports service clients (ledger/connector) with DB fallback
+21. payment-orchestrator connector callback endpoint auto-progresses SUBMITTED_TO_RAIL -> SETTLED/FAILED
+22. api-gateway forwards connector callback payloads to payment-orchestrator
+23. end-to-end contract test covers orchestrator submission + connector callback + reconciliation
+24. contract suite includes API gateway callback path and reconciliation service-mode variant
+25. connector-gateway supports optional outbound callback forwarding to orchestrator callback endpoint
+26. contract suite includes connector-driven callback forwarding end-to-end path
+27. payment-orchestrator persists transfer lifecycle events and exposes transfer event history API
+28. contract and service tests assert transfer lifecycle event emission on state transitions
+29. payment-orchestrator exposes relay endpoint that exports only unprocessed transfer events
+30. relay behavior is idempotent and verified in orchestrator + contract test suites
+31. connector-gateway persists transaction status history and exposes filtered transaction-events API
+32. reconciliation service-mode contract can source connector records from connector transaction-events feed
+33. api-gateway exposes `POST /v1/transfers/events/relay` that forwards to orchestrator with request-id propagation
+34. contract suite covers api-gateway relay path with idempotent second call guard
+35. payment-orchestrator exposes `GET /v1/transfers` with `sender_user_id`, `status`, `limit`, and cursor-based pagination
+36. api-gateway exposes `GET /v1/transfers` passthrough and contract suite validates pagination and filtering end-to-end
+37. payment-orchestrator exposes `POST /v1/transfers/{transfer_id}/cancel` that transitions CREATED/VALIDATED/RESERVED → FAILED with reason CANCELLED
+38. api-gateway exposes `POST /v1/transfers/{transfer_id}/cancel` passthrough; contract suite verifies cancellation from multiple states and that FAILED list shows cancelled transfers
+39. api-gateway exposes `GET /v1/transfers/{transfer_id}/events` passthrough to orchestrator transfer lifecycle history endpoint
+40. contract suite validates gateway transfer-events passthrough for both SETTLED and CANCELLED transfer flows
+41. api-gateway exposes `GET /v1/connectors/transaction-events` passthrough backed by dedicated connector client and query forwarding
+42. contract suite validates gateway connector transaction-events passthrough filtering by `external_ref` and `status`, including latest-by-ref state expectations
+43. api-gateway exposes `GET /v1/connectors/transactions/{external_ref}` passthrough for latest connector transaction lookup
+44. contract suite validates gateway connector transaction lookup reflects callback-driven status progression (`PENDING` -> `CONFIRMED`) for a single external reference
+45. api-gateway exposes `GET /v1/connectors/transactions` passthrough for latest connector transaction listing
+46. contract suite validates gateway connector transactions list reflects callback-updated statuses and remains consistent with latest-by-ref state derived from connector transaction-events
+
+Immediate implementation sequence:
+1. ~~Add cross-service contract test suite.~~ ✓ Done — 8 contract tests cover identity→alias, orchestrator→ledger, and connector→reconciliation flows.
+2. ~~Add API gateway facade and request idempotency middleware.~~ ✓ Done — `services/api-gateway` added with middleware + tests.
+3. ~~Wire risk/compliance pre-checks into transfer state machine.~~ ✓ Done — CREATED→VALIDATED now runs pre-check hooks and can auto-fail.
+4. ~~Connect orchestrator to connector-gateway via internal service client.~~ ✓ Done — RESERVED→SUBMITTED_TO_RAIL now submits payout and can auto-fail.
+5. ~~Replace direct DB reconciliation reads with service clients or event-driven snapshots.~~ ✓ Done — `RECON_SOURCE_MODE=service` reads from ledger/connector APIs.
+
+Immediate next implementation sequence:
+1. ~~Add end-to-end integration tests that cover orchestrator submission + connector callback + reconciliation run.~~ ✓ Done — added to `tests/contract`.
+2. ~~Add API gateway forwarding endpoint for connector callbacks to orchestrator.~~ ✓ Done — `POST /v1/transfers/callbacks/connector`.
+
+Immediate next implementation sequence:
+1. ~~Add API gateway route coverage in contract tests for callback forwarding path.~~ ✓ Done — in `tests/contract/test_gateway_and_service_mode_contracts.py`.
+2. ~~Add reconciliation service-mode contract variant (`RECON_SOURCE_MODE=service`) in contract suite.~~ ✓ Done — in `tests/contract/test_gateway_and_service_mode_contracts.py`.
+
+Immediate next implementation sequence:
+1. ~~Add connector-gateway outbound callback forwarding option to api-gateway/orchestrator callback endpoint.~~ ✓ Done — optional forwarding added.
+2. ~~Add contract test that validates connector-gateway callback forwarding behavior end-to-end.~~ ✓ Done — added to contract suite.
+
+Immediate next implementation sequence:
+1. ~~Add a lightweight event/outbox model for transfer lifecycle events in orchestrator.~~ ✓ Done — `TransferEvent` model + `GET /v1/transfers/{transfer_id}/events` in orchestrator.
+2. ~~Add contract assertions for event emission on transfer state transitions.~~ ✓ Done — assertions added in orchestrator and contract suites.
+
+Immediate next implementation sequence:
+1. ~~Add a minimal relay job in payment-orchestrator to export unprocessed transfer events for downstream consumers.~~ ✓ Done — `POST /v1/transfers/events/relay` exports and marks unrelayed events.
+2. ~~Add service/contract coverage that verifies relay idempotency (same event not exported twice).~~ ✓ Done — repeat relay call returns zero exported events.
+
+Immediate next implementation sequence:
+1. ~~Add a connector-gateway events endpoint to expose callback transaction history by external reference and status.~~ ✓ Done — `GET /v1/connectors/transaction-events` with `external_ref` and `status` filters.
+2. ~~Add reconciliation contract coverage that uses connector events endpoint as source data for service-mode reconciliation.~~ ✓ Done — service-mode contract now derives connector records from connector events feed.
+
+Immediate next implementation sequence:
+1. ~~Add an API-gateway endpoint for orchestrator event relay (`/v1/transfers/events/relay`) with request id propagation.~~ ✓ Done — `POST /v1/transfers/events/relay` added to api-gateway with request-id forwarding.
+2. ~~Add contract coverage for API-gateway-mediated relay path including idempotent second relay call.~~ ✓ Done — `test_gateway_event_relay_contract` in `tests/contract/test_gateway_and_service_mode_contracts.py`.
+
+Immediate next implementation sequence:
+1. ~~Add `GET /v1/transfers` list endpoint to payment-orchestrator with `sender_user_id`, `status`, `limit`, and `cursor` filter params.~~ ✓ Done — `list_transfers()` in service + route; offset-based cursor via base64.
+2. ~~Add api-gateway passthrough for the transfers list endpoint and add contract coverage asserting pagination and status filtering work end-to-end.~~ ✓ Done — `list_transfers()` in `OrchestratorClient`, gateway route, unit test, and `test_transfer_list_contract` in contract suite.
+
+Immediate next implementation sequence:
+1. ~~Add a transfer cancellation endpoint (`POST /v1/transfers/{transfer_id}/cancel`) to the payment-orchestrator that transitions CREATED/VALIDATED/RESERVED → FAILED with a `CANCELLED` reason.~~ ✓ Done — `cancel_transfer()` in service + route; 409 on non-cancellable states.
+2. ~~Add api-gateway passthrough for the cancel endpoint and contract coverage verifying a cancelled transfer appears as FAILED in the transfers list.~~ ✓ Done — `cancel_transfer()` in `OrchestratorClient`, gateway route, unit test, and `test_cancel_transfer_contract` in contract suite.
+
+Immediate next implementation sequence:
+1. ~~Add a `GET /v1/transfers/{transfer_id}/events` passthrough to the api-gateway so callers can retrieve the full lifecycle event history for a transfer without hitting the orchestrator directly.~~ ✓ Done — added route + orchestrator client method + gateway unit test.
+2. ~~Add contract coverage asserting the gateway events passthrough returns the full event sequence for a completed (SETTLED) transfer, including a CANCELLED event for a cancelled transfer.~~ ✓ Done — `test_gateway_transfer_events_passthrough_contract` added to contract suite.
+
+Immediate next implementation sequence:
+1. ~~Add API-gateway passthrough for `GET /v1/connectors/transaction-events` so external callers can query connector transaction status history without direct connector-gateway access.~~ ✓ Done — added connector client + gateway route + unit coverage.
+2. ~~Add contract coverage verifying gateway connector-events passthrough filters by `external_ref` and `status` and remains consistent with reconciliation service-mode reader expectations.~~ ✓ Done — `test_gateway_connector_transaction_events_passthrough_contract` added and passing.
+
+Immediate next implementation sequence:
+1. ~~Add API-gateway passthrough for `GET /v1/connectors/transactions/{external_ref}` to fetch latest connector transaction record by external reference.~~ ✓ Done — added connector client lookup method + gateway route + unit test.
+2. ~~Add contract coverage verifying the gateway transaction passthrough reflects callback-updated status changes (for example `PENDING` -> `CONFIRMED`) for a single `external_ref`.~~ ✓ Done — `test_gateway_connector_transaction_lookup_status_progression_contract` added and passing.
+
+Immediate next implementation sequence:
+1. ~~Add API-gateway passthrough for `GET /v1/connectors/transactions` to expose latest connector transactions list through the gateway.~~ ✓ Done — added connector client list method + gateway route + unit test.
+2. ~~Add contract coverage verifying gateway transaction list passthrough returns callback-updated statuses and stays consistent with connector transaction-events-derived latest state.~~ ✓ Done — `test_gateway_connector_transactions_list_passthrough_contract` added and passing.
+
+Immediate next implementation sequence:
+1. ~~Add api-gateway passthrough for connector callback simulation endpoint (`POST /v1/connectors/simulate-callback`) to support controlled test orchestration via a single gateway entry point.~~ ✓ Done — added `simulate_callback` to ConnectorClient + gateway route + unit test.
+2. ~~Add contract coverage verifying gateway simulate-callback passthrough can drive status transition from `PENDING` to `CONFIRMED` and is observable via both gateway transaction lookup and transaction-events endpoints.~~ ✓ Done — `test_gateway_simulate_callback_passthrough_contract` added and passing.
+
+Immediate next implementation sequence:
+1. ~~Add api-gateway passthrough for `POST /v1/transfers/callbacks/connector` so the orchestrator callback path is exercisable via the gateway in addition to direct connector-gateway webhook delivery.~~ ✓ Done — existing gateway route retained and unit coverage tightened to verify forwarded payload and request ID.
+2. ~~Add contract coverage verifying gateway connector-callback passthrough drives an orchestrator transfer from `SUBMITTED_TO_RAIL` to `SETTLED` and that the resulting transfer state is observable via the gateway transfer lookup endpoint.~~ ✓ Done — `test_gateway_callback_forwarding_contract` now verifies both callback settlement and follow-up gateway transfer lookup.
+
+Immediate next implementation sequence:
+1. ~~Add api-gateway passthrough for `POST /v1/reconciliation/runs` so reconciliation can be executed from the unified gateway entry point.~~ ✓ Done — added dedicated reconciliation client + gateway route + unit test.
+2. ~~Add contract coverage verifying a reconciliation run triggered through the gateway completes successfully in service mode and exposes mismatch-free results for a matched ledger and connector record.~~ ✓ Done — `test_gateway_reconciliation_run_service_mode_contract` added and passing.
+
+Immediate next implementation sequence:
+1. ~~Add api-gateway passthrough for `GET /v1/reconciliation/runs/{run_id}` so reconciliation results can be retrieved through the same gateway after execution.~~ ✓ Done — added reconciliation client detail method + gateway route + unit test.
+2. ~~Add contract coverage verifying a run created through the gateway can be fetched again through the gateway and preserves matched/mismatch counts plus mismatch details.~~ ✓ Done — `test_gateway_reconciliation_run_detail_contract` added and passing.
+
+Immediate next implementation sequence:
+1. ~~Add api-gateway passthrough for `POST /v1/transfers/{transfer_id}/transition` so orchestrator lifecycle advancement can be exercised through the unified gateway entry point.~~ ✓ Done — added `transition_transfer` to OrchestratorClient + gateway route + unit test.
+2. ~~Add contract coverage verifying a transfer created through the gateway can be transitioned through `VALIDATED` and `RESERVED` via the gateway and remains observable via gateway transfer lookup and events.~~ ✓ Done — `test_gateway_transfer_transition_contract` added and passing.
+
+Immediate next implementation sequence:
+1. ~~Add api-gateway passthrough for `POST /v1/transfers/{transfer_id}/transition` to `SUBMITTED_TO_RAIL` so the full end-to-end happy path (create → validate → reserve → submit → callback → settle) can be driven entirely through the gateway.~~ ✓ Done — existing transition route already handles all status values including SUBMITTED_TO_RAIL.
+2. ~~Add contract coverage verifying the full CREATED→SETTLED lifecycle driven purely through gateway endpoints, with connector-gateway simulate-callback injected mid-flow and the final SETTLED state observable via gateway transfer lookup.~~ ✓ Done — `test_gateway_full_e2e_happy_path_contract` added and passing (24 contract tests total).
+
+Immediate next implementation sequence:
+1. Add idempotency enforcement to the api-gateway create-transfer route so that a second request with the same `Idempotency-Key` header returns the original response without forwarding to the orchestrator again.
+2. Add contract coverage verifying that a duplicate create-transfer request (same `Idempotency-Key`) through the gateway returns the cached first response rather than creating a second transfer.
+
 ## 1. Vision
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
