@@ -1423,3 +1423,115 @@ def test_gateway_idempotency_contract(gateway_client, orchestrator_client) -> No
     no_key = gateway_client.post("/v1/transfers", json=payload)
     assert no_key.status_code == 400
     assert "Idempotency-Key" in no_key.json()["detail"]
+
+
+def test_gateway_failed_transition_contract(
+    gateway_client, orchestrator_client
+) -> None:
+    """A transfer explicitly transitioned to FAILED via the gateway exposes
+    the failure_reason on lookup and in the events feed."""
+
+    # Wire gateway client methods in-process before any call.
+    gw_xfer_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers" and getattr(r, "methods", None) == {"POST"}
+    )
+    gw_client = gw_xfer_route.endpoint.__globals__["_client"]
+
+    async def _create_inproc(payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post("/v1/transfers", json=payload, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _transition_inproc(transfer_id: str, payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post(
+            f"/v1/transfers/{transfer_id}/transition",
+            json=payload,
+            headers=headers,
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _lookup_inproc(transfer_id: str, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}", headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _events_inproc(transfer_id: str, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gw_client.create_transfer = _create_inproc
+    gw_client.transition_transfer = _transition_inproc
+    gw_client.get_transfer = _lookup_inproc
+    gw_client.list_transfer_events = _events_inproc
+
+    # 1. Create a transfer.
+    create = gateway_client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-fail-1",
+            "recipient_phone_e164": "+15550909090",
+            "currency": "USD",
+            "amount_minor": 500,
+        },
+        headers={"Idempotency-Key": "fail-contract-1", "X-Request-Id": "fail-create-1"},
+    )
+    assert create.status_code == 201
+    transfer_id = create.json()["transfer_id"]
+
+    # 2. Advance to VALIDATED then RESERVED.
+    val = gateway_client.post(
+        f"/v1/transfers/{transfer_id}/transition",
+        json={"status": "VALIDATED"},
+        headers={"X-Request-Id": "fail-val-1"},
+    )
+    assert val.status_code == 200
+    assert val.json()["status"] == "VALIDATED"
+
+    res = gateway_client.post(
+        f"/v1/transfers/{transfer_id}/transition",
+        json={"status": "RESERVED"},
+        headers={"X-Request-Id": "fail-res-1"},
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "RESERVED"
+
+    # 3. Fail the transfer with an explicit reason.
+    failure_reason = "connector_unavailable"
+    failed = gateway_client.post(
+        f"/v1/transfers/{transfer_id}/transition",
+        json={"status": "FAILED", "failure_reason": failure_reason},
+        headers={"X-Request-Id": "fail-transition-1"},
+    )
+    assert failed.status_code == 200
+    assert failed.json()["status"] == "FAILED"
+    assert failed.json()["failure_reason"] == failure_reason
+
+    # 4. Gateway lookup returns FAILED with the reason.
+    lookup = gateway_client.get(
+        f"/v1/transfers/{transfer_id}",
+        headers={"X-Request-Id": "fail-lookup-1"},
+    )
+    assert lookup.status_code == 200
+    assert lookup.json()["status"] == "FAILED"
+    assert lookup.json()["failure_reason"] == failure_reason
+    assert lookup.headers.get("X-Request-Id") == "fail-lookup-1"
+
+    # 5. Further transitions from FAILED are rejected (terminal status).
+    retry = gateway_client.post(
+        f"/v1/transfers/{transfer_id}/transition",
+        json={"status": "VALIDATED"},
+        headers={"X-Request-Id": "fail-retry-1"},
+    )
+    assert retry.status_code == 409
+
+    # 6. Events feed shows the full lifecycle ending with the FAILED event.
+    events_resp = gateway_client.get(
+        f"/v1/transfers/{transfer_id}/events",
+        headers={"X-Request-Id": "fail-events-1"},
+    )
+    assert events_resp.status_code == 200
+    events = events_resp.json()
+    assert any(e.get("to_status") == "VALIDATED" for e in events)
+    assert any(e.get("to_status") == "RESERVED" for e in events)
+    failed_events = [e for e in events if e.get("to_status") == "FAILED"]
+    assert failed_events, "expected at least one FAILED event"
+    assert failed_events[-1].get("failure_reason") == failure_reason

@@ -142,8 +142,12 @@ Immediate next implementation sequence:
 2. ~~Add contract coverage verifying that a duplicate create-transfer request (same `Idempotency-Key`) through the gateway returns the cached first response rather than creating a second transfer.~~ ✓ Done — `test_gateway_idempotency_contract` added and passing (25 contract tests total).
 
 Immediate next implementation sequence:
-1. Add a `FAILED` terminal state transition to the payment-orchestrator so that transfers that cannot be submitted or that receive a terminal failure callback can be moved to `FAILED` status with a `failure_reason` field recorded.
-2. Add contract coverage verifying that a transfer transitioned to `FAILED` via the gateway returns `FAILED` status on lookup and the failure reason is present in the events feed.
+1. ~~Add a `FAILED` terminal state transition to the payment-orchestrator so that transfers that cannot be submitted or that receive a terminal failure callback can be moved to `FAILED` status with a `failure_reason` field recorded.~~ ✓ Done — `FAILED` status, `failure_reason` field, `ALLOWED_TRANSITIONS`, schema, and service logic were already fully implemented; orchestrator unit tests cover auto-fail from prechecks, connector submission failure, callback failure, and explicit cancel-to-FAILED (14 orchestrator tests passing).
+2. ~~Add contract coverage verifying that a transfer transitioned to `FAILED` via the gateway returns `FAILED` status on lookup and the failure reason is present in the events feed.~~ ✓ Done — `test_gateway_failed_transition_contract` added: creates, advances to RESERVED, transitions to FAILED with `connector_unavailable` reason, asserts gateway lookup and events feed both expose the failure, and asserts further transitions return 409 (26 contract tests total).
+
+Immediate next implementation sequence:
+1. Add a `REVERSED` terminal state path to the payment-orchestrator so that settled transfers can be reversed via an explicit transition, recording a `reversal_reason` in the events feed and marking the transfer as `REVERSED`.
+2. Add contract coverage verifying that a SETTLED transfer transitioned to `REVERSED` via the gateway exposes the `REVERSED` status on lookup and a reversal event in the events feed.
 
 ## 1. Vision
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
