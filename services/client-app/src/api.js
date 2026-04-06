@@ -69,11 +69,12 @@ export async function createTransfer(input) {
   });
 }
 
-export async function listTransfers({ senderUserId = "", status = "", limit = 20 } = {}) {
+export async function listTransfers({ senderUserId = "", status = "", limit = 20, cursor = "" } = {}) {
   const query = new URLSearchParams();
   query.set("limit", String(limit));
   if (senderUserId) query.set("sender_user_id", senderUserId);
   if (status) query.set("status", status);
+  if (cursor) query.set("cursor", cursor);
 
   return request(`/v1/transfers?${query.toString()}`);
 }
@@ -89,5 +90,51 @@ export async function getTransferEvents(transferId) {
 export async function cancelTransfer(transferId) {
   return request(`/v1/transfers/${encodeURIComponent(transferId)}/cancel`, {
     method: "POST",
+  });
+}
+
+// ── Identity ──────────────────────────────────────────
+
+export async function createUser(input) {
+  return request("/v1/users", {
+    method: "POST",
+    headers: { "Idempotency-Key": requestId() },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getUser(userId) {
+  return request(`/v1/users/${encodeURIComponent(userId)}`);
+}
+
+export async function getUserStatus(userId) {
+  return request(`/v1/users/${encodeURIComponent(userId)}/status`);
+}
+
+// ── Alias ─────────────────────────────────────────────
+
+export async function resolveAlias(phoneE164) {
+  const q = new URLSearchParams({ phone_e164: phoneE164 });
+  return request(`/v1/aliases/resolve?${q.toString()}`);
+}
+
+export async function submitKyc(userId, providerCaseId) {
+  return request(`/v1/users/${encodeURIComponent(userId)}/kyc/submit`, {
+    method: "POST",
+    body: JSON.stringify({ provider_case_id: providerCaseId }),
+  });
+}
+
+export async function verifyPhone(phoneE164) {
+  return request("/v1/aliases/verify-phone", {
+    method: "POST",
+    body: JSON.stringify({ phone_e164: phoneE164 }),
+  });
+}
+
+export async function bindAlias(verificationId, userId) {
+  return request("/v1/aliases/bind", {
+    method: "POST",
+    body: JSON.stringify({ verification_id: verificationId, user_id: userId }),
   });
 }

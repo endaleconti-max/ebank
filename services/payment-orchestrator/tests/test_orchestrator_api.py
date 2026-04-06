@@ -410,3 +410,221 @@ def test_cancel_transfer_allowed_from_validated_and_reserved() -> None:
 def test_cancel_transfer_not_found_returns_404() -> None:
     resp = client.post("/v1/transfers/nonexistent-id/cancel")
     assert resp.status_code == 404
+
+
+def test_reversed_transition_from_settled_records_reason(monkeypatch) -> None:
+    """SETTLED → REVERSED succeeds when failure_reason provided; reason persists
+    on the transfer and in the events feed."""
+    import httpx
+
+    def fake_payout(transfer):
+        return {"ok": "true", "reason": "", "external_ref": f"rev-ext-{transfer.transfer_id}"}
+
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        fake_payout,
+    )
+
+    # Create and advance to SETTLED.
+    r = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-rev-1",
+            "recipient_phone_e164": "+15551110001",
+            "currency": "USD",
+            "amount_minor": 400,
+        },
+        headers={"Idempotency-Key": "rev-idem-1"},
+    )
+    assert r.status_code == 201
+    tid = r.json()["transfer_id"]
+
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "RESERVED"})
+    submitted = client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    assert submitted.status_code == 200
+    ext_ref = submitted.json()["connector_external_ref"]
+    assert ext_ref
+
+    settled = client.post(
+        "/v1/transfers/callbacks/connector",
+        json={"external_ref": ext_ref, "status": "CONFIRMED"},
+    )
+    assert settled.status_code == 200
+    assert settled.json()["status"] == "SETTLED"
+
+    # Reverse the settled transfer.
+    reversal_reason = "customer_dispute_accepted"
+    reversed_resp = client.post(
+        f"/v1/transfers/{tid}/transition",
+        json={"status": "REVERSED", "failure_reason": reversal_reason},
+    )
+    assert reversed_resp.status_code == 200
+    assert reversed_resp.json()["status"] == "REVERSED"
+    assert reversed_resp.json()["failure_reason"] == reversal_reason
+
+    # Lookup reflects REVERSED status.
+    lookup = client.get(f"/v1/transfers/{tid}")
+    assert lookup.json()["status"] == "REVERSED"
+    assert lookup.json()["failure_reason"] == reversal_reason
+
+    # Events feed contains the REVERSED event with reason.
+    events = client.get(f"/v1/transfers/{tid}/events").json()
+    reversed_events = [e for e in events if e.get("to_status") == "REVERSED"]
+    assert reversed_events, "expected at least one REVERSED event"
+    assert reversed_events[-1]["failure_reason"] == reversal_reason
+
+
+def test_reversed_transition_requires_reason(monkeypatch) -> None:
+    """Attempting REVERSED without failure_reason is rejected with 409."""
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"rev-req-ext-{t.transfer_id}"},
+    )
+    r = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-rev-2",
+            "recipient_phone_e164": "+15551110002",
+            "currency": "USD",
+            "amount_minor": 100,
+        },
+        headers={"Idempotency-Key": "rev-idem-2"},
+    )
+    tid = r.json()["transfer_id"]
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "RESERVED"})
+    submitted = client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    assert submitted.status_code == 200
+    ext = submitted.json()["connector_external_ref"]
+    client.post("/v1/transfers/callbacks/connector", json={"external_ref": ext, "status": "CONFIRMED"})
+
+    resp = client.post(
+        f"/v1/transfers/{tid}/transition",
+        json={"status": "REVERSED"},
+    )
+    # No failure_reason → 409
+    assert resp.status_code == 409
+    assert "failure_reason" in resp.json()["detail"]
+
+
+def test_reversed_is_terminal(monkeypatch) -> None:
+    """No further transitions are allowed from REVERSED."""
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"rev-term-ext-{t.transfer_id}"},
+    )
+    r = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-rev-3",
+            "recipient_phone_e164": "+15551110003",
+            "currency": "USD",
+            "amount_minor": 100,
+        },
+        headers={"Idempotency-Key": "rev-idem-3"},
+    )
+    tid = r.json()["transfer_id"]
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "RESERVED"})
+    submitted = client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    assert submitted.status_code == 200
+    ext = submitted.json()["connector_external_ref"]
+    client.post("/v1/transfers/callbacks/connector", json={"external_ref": ext, "status": "CONFIRMED"})
+
+    # Reverse the settled transfer.
+    client.post(
+        f"/v1/transfers/{tid}/transition",
+        json={"status": "REVERSED", "failure_reason": "force_reversed"},
+    )
+
+    # Any further transition is rejected.
+    retry = client.post(
+        f"/v1/transfers/{tid}/transition",
+        json={"status": "SETTLED", "failure_reason": "some_reason"},
+    )
+    assert retry.status_code == 409
+
+
+def test_ledger_posting_called_on_submission(monkeypatch) -> None:
+    """When ledger_posting_enabled is True, post_transfer_entry is called once
+    with the correct transfer after a successful RESERVED→SUBMITTED_TO_RAIL."""
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"led-ext-{t.transfer_id}"},
+    )
+
+    captured = {}
+
+    def fake_post_entry(transfer):
+        captured["transfer_id"] = transfer.transfer_id
+        captured["sender_acct"] = transfer.sender_ledger_account_id
+        captured["transit_acct"] = transfer.transit_ledger_account_id
+        captured["amount"] = transfer.amount_minor
+        return {"ok": "true", "entry_id": "fake-entry-1"}
+
+    monkeypatch.setattr("app.domain.service.post_transfer_entry", fake_post_entry)
+    monkeypatch.setattr("app.domain.service.settings.ledger_posting_enabled", True)
+
+    r = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-led-1",
+            "recipient_phone_e164": "+15551230101",
+            "currency": "USD",
+            "amount_minor": 300,
+            "sender_ledger_account_id": "acct-sender-1",
+            "transit_ledger_account_id": "acct-transit-1",
+        },
+        headers={"Idempotency-Key": "led-idem-1"},
+    )
+    assert r.status_code == 201
+    tid = r.json()["transfer_id"]
+    assert r.json()["sender_ledger_account_id"] == "acct-sender-1"
+    assert r.json()["transit_ledger_account_id"] == "acct-transit-1"
+
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "RESERVED"})
+    submitted = client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "SUBMITTED_TO_RAIL"
+
+    assert captured.get("transfer_id") == tid
+    assert captured.get("sender_acct") == "acct-sender-1"
+    assert captured.get("transit_acct") == "acct-transit-1"
+    assert captured.get("amount") == 300
+
+
+def test_ledger_posting_skipped_when_disabled(monkeypatch) -> None:
+    """When ledger_posting_enabled is False (default), post_transfer_entry is
+    never called."""
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"led-ext2-{t.transfer_id}"},
+    )
+
+    captured = {"called": False}
+
+    def fake_post_entry(transfer):
+        captured["called"] = True
+        return {"ok": "true"}
+
+    monkeypatch.setattr("app.domain.service.post_transfer_entry", fake_post_entry)
+    # ledger_posting_enabled defaults to False — do not override
+
+    r = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-led-2",
+            "recipient_phone_e164": "+15551230102",
+            "currency": "USD",
+            "amount_minor": 100,
+        },
+        headers={"Idempotency-Key": "led-idem-2"},
+    )
+    tid = r.json()["transfer_id"]
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "RESERVED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+
+    assert not captured["called"], "post_transfer_entry should not be called when ledger_posting_enabled=False"

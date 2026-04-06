@@ -152,9 +152,9 @@ p {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.55rem;
-  width: min(700px, 100%);
+  width: min(900px, 100%);
 }
 
 .summary-grid article {
@@ -176,14 +176,47 @@ p {
   font-size: 1.15rem;
 }
 
-.auth-form {
+.auth-tabs {
   display: flex;
-  gap: 0.7rem;
-  align-items: end;
+  gap: 0;
+  border-bottom: 1px solid var(--stroke);
+  margin-bottom: 1rem;
 }
 
-.auth-form label {
-  flex: 1;
+.auth-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.55rem 1rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 120ms, border-color 120ms;
+}
+
+.auth-tab.active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+}
+
+.auth-subtitle {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin-bottom: 0.75rem;
+}
+
+.alias-hint {
+  display: block;
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+  min-height: 1em;
+  color: var(--brand);
+}
+
+.alias-hint.not-found {
+  color: var(--muted);
 }
 
 .detail-panel {
@@ -340,6 +373,15 @@ select:focus {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.transfer-note {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .details-empty {
   color: var(--muted);
   margin-bottom: 1rem;
@@ -451,6 +493,16 @@ select:focus {
   background: #991b1b;
 }
 
+.auth-form {
+  display: flex;
+  gap: 0.7rem;
+  align-items: end;
+}
+
+.auth-form label {
+  flex: 1;
+}
+
 /* ── Shimmer / skeleton loading ────────────────────── */
 
 @keyframes shimmer {
@@ -494,6 +546,44 @@ select:focus {
   50%       { opacity: 0.25; }
 }
 
+/* ── KYC action inline ─────────────────────────────── */
+
+.kyc-action {
+  margin-top: 1.2rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--stroke);
+  width: 100%;
+}
+
+.kyc-action-label {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 0.9rem;
+}
+
+/* ── Phone link panel ──────────────────────────────── */
+
+.phone-link-confirmed {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--brand-deep);
+  margin-bottom: 0.9rem;
+  padding: 0.6rem 0.9rem;
+  background: #d1fae5;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ── Load more row ─────────────────────────────────── */
+
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  padding-top: 0.9rem;
+}
+
 /* ── Events section gap ────────────────────────────── */
 
 .events-section {
@@ -527,6 +617,7 @@ select:focus {
   }
 
   .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
   }
 

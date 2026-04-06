@@ -2,7 +2,9 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
+from app.clients.alias_client import AliasClient
 from app.clients.connector_client import ConnectorClient
+from app.clients.identity_client import IdentityClient
 from app.clients.orchestrator_client import OrchestratorClient
 from app.clients.reconciliation_client import ReconciliationClient
 
@@ -10,6 +12,8 @@ router = APIRouter(prefix="/v1", tags=["api-gateway"])
 _client = OrchestratorClient()
 _connector_client = ConnectorClient()
 _reconciliation_client = ReconciliationClient()
+_identity_client = IdentityClient()
+_alias_client = AliasClient()
 
 
 def _forward_headers(request: Request) -> dict:
@@ -147,6 +151,68 @@ async def get_reconciliation_run(run_id: str, request: Request):
     resp = await _reconciliation_client.get_reconciliation_run(run_id=run_id, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream reconciliation unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+# ── Identity routes ──────────────────────────────────────────────────────────
+
+@router.post("/users")
+async def create_user(payload: dict, request: Request):
+    resp = await _identity_client.create_user(payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream identity unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.get("/users/{user_id}")
+async def get_user(user_id: str, request: Request):
+    resp = await _identity_client.get_user(user_id=user_id, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream identity unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.get("/users/{user_id}/status")
+async def get_user_status(user_id: str, request: Request):
+    resp = await _identity_client.get_user_status(user_id=user_id, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream identity unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.post("/users/{user_id}/kyc/submit")
+async def submit_kyc(user_id: str, payload: dict, request: Request):
+    resp = await _identity_client.submit_kyc(
+        user_id=user_id, payload=payload, headers=_forward_headers(request)
+    )
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream identity unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+# ── Alias routes ──────────────────────────────────────────────────────────────
+
+@router.post("/aliases/verify-phone")
+async def verify_phone(payload: dict, request: Request):
+    resp = await _alias_client.verify_phone(payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream alias unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.post("/aliases/bind")
+async def bind_alias(payload: dict, request: Request):
+    resp = await _alias_client.bind_alias(payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream alias unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.get("/aliases/resolve")
+async def resolve_alias(phone_e164: str, request: Request):
+    resp = await _alias_client.resolve_alias(phone_e164=phone_e164, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream alias unavailable")
     return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
 
 

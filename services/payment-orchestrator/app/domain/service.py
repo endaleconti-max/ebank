@@ -15,6 +15,7 @@ from app.domain.errors import (
 )
 from app.config import settings
 from app.domain.connector_client import submit_payout
+from app.domain.ledger_client import post_transfer_entry
 from app.domain.models import Transfer, TransferEvent, TransferStatus
 from app.domain.prechecks import run_prechecks
 
@@ -42,6 +43,8 @@ class PaymentOrchestratorService:
         currency: str,
         amount_minor: int,
         note: Optional[str],
+        sender_ledger_account_id: Optional[str] = None,
+        transit_ledger_account_id: Optional[str] = None,
     ) -> Transfer:
         if amount_minor <= 0:
             raise InvalidTransferRequestError("amount_minor must be > 0")
@@ -60,6 +63,8 @@ class PaymentOrchestratorService:
             amount_minor=amount_minor,
             note=note,
             status=TransferStatus.CREATED,
+            sender_ledger_account_id=sender_ledger_account_id,
+            transit_ledger_account_id=transit_ledger_account_id,
         )
         self.db.add(transfer)
         self.db.flush()
@@ -120,8 +125,8 @@ class PaymentOrchestratorService:
                 self.db.refresh(transfer)
                 return transfer
 
-        if next_status == TransferStatus.FAILED and not failure_reason:
-            raise InvalidTransitionError("failure_reason is required for FAILED state")
+        if next_status in {TransferStatus.FAILED, TransferStatus.REVERSED} and not failure_reason:
+            raise InvalidTransitionError("failure_reason is required for FAILED or REVERSED state")
 
         if transfer.status == TransferStatus.RESERVED and next_status == TransferStatus.SUBMITTED_TO_RAIL:
             if settings.connector_submission_enabled:
@@ -141,8 +146,15 @@ class PaymentOrchestratorService:
                     self.db.refresh(transfer)
                     return transfer
 
+            if settings.ledger_posting_enabled:
+                post_transfer_entry(transfer)
+
         transfer.status = next_status
-        transfer.failure_reason = failure_reason if next_status == TransferStatus.FAILED else None
+        transfer.failure_reason = (
+            failure_reason
+            if next_status in {TransferStatus.FAILED, TransferStatus.REVERSED}
+            else None
+        )
         self._record_event(
             transfer=transfer,
             event_type="TRANSFER_STATUS_TRANSITIONED",

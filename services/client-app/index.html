@@ -29,17 +29,41 @@
       </header>
 
       <section class="card auth-panel" id="authPanel">
-        <div class="panel-head">
-          <h2>Welcome</h2>
-          <p>Sign in to your wallet.</p>
+        <div class="auth-tabs" role="tablist">
+          <button class="auth-tab active" id="tabSignIn" role="tab" aria-selected="true" type="button">Sign in</button>
+          <button class="auth-tab" id="tabRegister" role="tab" aria-selected="false" type="button">Register</button>
         </div>
-        <form id="authForm" class="auth-form" novalidate>
-          <label>
-            Your customer ID
-            <input id="authUserId" name="authUserId" placeholder="user-001" required maxlength="64" />
-          </label>
-          <button id="signInBtn" class="btn primary" type="submit">Continue</button>
-        </form>
+
+        <div id="panelSignIn">
+          <p class="auth-subtitle">Enter your customer ID to continue.</p>
+          <form id="authForm" class="auth-form" novalidate>
+            <label>
+              Customer ID
+              <input id="authUserId" name="authUserId" placeholder="user-001" required maxlength="64" />
+            </label>
+            <button id="signInBtn" class="btn primary" type="submit">Continue</button>
+          </form>
+        </div>
+
+        <div id="panelRegister" class="hidden">
+          <p class="auth-subtitle">Create a new account.</p>
+          <form id="registerForm" class="form-grid" novalidate>
+            <label>
+              Full name
+              <input id="regFullName" name="regFullName" placeholder="Jane Smith" required maxlength="140" />
+            </label>
+            <label>
+              Country code
+              <input id="regCountry" name="regCountry" placeholder="US" required minlength="2" maxlength="2" />
+            </label>
+            <label class="span-2">
+              Email
+              <input id="regEmail" name="regEmail" type="email" placeholder="jane@example.com" required />
+            </label>
+            <button id="registerBtn" class="btn primary span-2" type="submit">Create account</button>
+          </form>
+          <p class="feedback" id="registerFeedback" role="status" aria-live="polite"></p>
+        </div>
       </section>
 
       <section class="card summary-panel hidden" id="summaryPanel">
@@ -60,6 +84,46 @@
             <span>Last status</span>
             <strong id="statsStatus">-</strong>
           </article>
+          <article>
+            <span>KYC status</span>
+            <strong id="statsKyc">-</strong>
+          </article>
+        </div>
+        <div class="kyc-action hidden" id="kycAction">
+          <p class="kyc-action-label">Complete your identity verification to unlock all features.</p>
+          <form id="kycActionForm" class="form-grid" novalidate>
+            <label class="span-2">
+              Provider case ID
+              <input id="kycCaseId" name="kycCaseId" placeholder="KYC-case-1234" required minlength="3" maxlength="64" />
+            </label>
+            <button id="kycSubmitBtn" class="btn primary span-2" type="submit">Submit KYC</button>
+          </form>
+          <p class="feedback" id="kycActionFeedback" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="card phone-link-panel hidden" id="phoneLinkPanel">
+        <div class="panel-head">
+          <h2>Link phone number</h2>
+          <p>Bind your mobile number so others can send money to you.</p>
+        </div>
+        <div id="phoneLinkStep1">
+          <form id="phoneLinkForm" class="form-grid" novalidate>
+            <label class="span-2">
+              Mobile number
+              <input id="phoneLinkInput" name="phoneLinkInput" placeholder="+15550001234" required pattern="^\+[1-9][0-9]{7,14}$" />
+            </label>
+            <button id="phoneLinkVerifyBtn" class="btn primary span-2" type="submit">Verify number</button>
+          </form>
+          <p class="feedback" id="phoneLinkFeedback" role="status" aria-live="polite"></p>
+        </div>
+        <div id="phoneLinkStep2" class="hidden">
+          <p class="phone-link-confirmed" id="phoneLinkConfirmedMsg"></p>
+          <div class="form-grid">
+            <button id="phoneLinkBindBtn" class="btn primary span-2" type="button">Bind number</button>
+            <button id="phoneLinkCancelBtn" class="btn ghost span-2" type="button">Start over</button>
+          </div>
+          <p class="feedback" id="phoneLinkBindFeedback" role="status" aria-live="polite"></p>
         </div>
       </section>
 
@@ -76,6 +140,7 @@
           <label>
             Recipient phone
             <input id="recipientPhone" name="recipientPhone" placeholder="+15550005555" required pattern="^\+[1-9][0-9]{7,14}$" />
+            <span class="alias-hint" id="aliasHint"></span>
           </label>
           <label>
             Amount
@@ -113,6 +178,9 @@
           <button id="applyFiltersBtn" class="btn ghost" type="button">Apply</button>
         </div>
         <div id="transferList" class="transfer-list"></div>
+        <div id="loadMoreRow" class="load-more-row hidden">
+          <button id="loadMoreBtn" class="btn ghost" type="button">Load more</button>
+        </div>
       </section>
 
       <section class="card detail-panel hidden" id="detailPanel">

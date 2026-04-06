@@ -146,8 +146,18 @@ Immediate next implementation sequence:
 2. ~~Add contract coverage verifying that a transfer transitioned to `FAILED` via the gateway returns `FAILED` status on lookup and the failure reason is present in the events feed.~~ ✓ Done — `test_gateway_failed_transition_contract` added: creates, advances to RESERVED, transitions to FAILED with `connector_unavailable` reason, asserts gateway lookup and events feed both expose the failure, and asserts further transitions return 409 (26 contract tests total).
 
 Immediate next implementation sequence:
-1. Add a `REVERSED` terminal state path to the payment-orchestrator so that settled transfers can be reversed via an explicit transition, recording a `reversal_reason` in the events feed and marking the transfer as `REVERSED`.
-2. Add contract coverage verifying that a SETTLED transfer transitioned to `REVERSED` via the gateway exposes the `REVERSED` status on lookup and a reversal event in the events feed.
+1. ~~Add a `REVERSED` terminal state path to the payment-orchestrator so that settled transfers can be reversed via an explicit transition, recording a `reversal_reason` in the events feed and marking the transfer as `REVERSED`.~~ ✓ Done — added `failure_reason` requirement for `REVERSED` transitions (same enforcement as `FAILED`), persists reason on transfer and in event; added `test_reversed_transition_from_settled_records_reason`, `test_reversed_transition_requires_reason`, `test_reversed_is_terminal` (17 orchestrator tests passing).
+2. ~~Add contract coverage verifying that a SETTLED transfer transitioned to `REVERSED` via the gateway exposes the `REVERSED` status on lookup and a reversal event in the events feed.~~ ✓ Done — `test_gateway_reversed_transition_contract` added: drives full SETTLED lifecycle through gateway, reverses with `chargeback_accepted` reason, asserts lookup + events feed + terminal (27 contract tests total).
+
+Immediate next implementation sequence:
+1. Add a ledger double-entry posting step to the payment-orchestrator's RESERVED→SUBMITTED_TO_RAIL transition so that funds are debited from the sender's wallet account and credited to the transit/escrow account at time of submission.
+2. Add contract coverage verifying that after a transfer reaches SUBMITTED_TO_RAIL via the gateway, the sender's ledger balance reflects the debit and the transit account reflects the credit.
+47. ledger double-entry posting wired into orchestrator RESERVED→SUBMITTED_TO_RAIL transition (`ledger_client.py`, `post_transfer_entry`, gated by `ledger_posting_enabled` config flag; new `sender_ledger_account_id` / `transit_ledger_account_id` optional fields on Transfer model and schemas)
+48. contract test `test_gateway_ledger_posting_on_submission_contract` verifies sender balance debited and transit account credited after SUBMITTED_TO_RAIL; all suites green: 19 orchestrator + 15 gateway + 28 contract tests
+
+Immediate next implementation sequence:
+1. Add a ledger double-entry reversal posting to the payment-orchestrator's SETTLED→REVERSED transition so that the transit account is debited and the sender's wallet account is credited back at time of reversal.
+2. Add contract coverage verifying that after a SETTLED transfer is reversed via the gateway, the transit account balance reflects the debit-back and the sender's ledger balance reflects the credit-back.
 
 ## 1. Vision
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.

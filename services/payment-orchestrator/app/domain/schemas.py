@@ -12,6 +12,8 @@ class CreateTransferRequest(BaseModel):
     currency: str = Field(min_length=3, max_length=3)
     amount_minor: int = Field(ge=1)
     note: Optional[str] = Field(default=None, max_length=140)
+    sender_ledger_account_id: Optional[str] = Field(default=None, max_length=36)
+    transit_ledger_account_id: Optional[str] = Field(default=None, max_length=36)
 
 
 class TransferResponse(BaseModel):
@@ -28,6 +30,8 @@ class TransferResponse(BaseModel):
     note: Optional[str]
     status: TransferStatus
     failure_reason: Optional[str]
+    sender_ledger_account_id: Optional[str]
+    transit_ledger_account_id: Optional[str]
     created_at: datetime
     updated_at: datetime
 

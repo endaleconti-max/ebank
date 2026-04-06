@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     connector_base_url: str = "http://localhost:8005"
     connector_id: str = "mock-bank-a"
     connector_destination: str = "acct-orchestrator-default"
+    ledger_base_url: str = "http://localhost:8003"
+    ledger_posting_enabled: bool = False
 
 
 settings = Settings()

@@ -1535,3 +1535,303 @@ def test_gateway_failed_transition_contract(
     failed_events = [e for e in events if e.get("to_status") == "FAILED"]
     assert failed_events, "expected at least one FAILED event"
     assert failed_events[-1].get("failure_reason") == failure_reason
+
+
+def test_gateway_reversed_transition_contract(
+    gateway_client, orchestrator_client, connector_client
+) -> None:
+    """A SETTLED transfer transitioned to REVERSED via the gateway exposes
+    REVERSED status on lookup and a reversal event with the reason in the events feed."""
+
+    # Wire all gateway client methods in-process before the first call.
+    gw_xfer_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers" and getattr(r, "methods", None) == {"POST"}
+    )
+    gw_client = gw_xfer_route.endpoint.__globals__["_client"]
+
+    async def _create_inproc(payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post("/v1/transfers", json=payload, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _transition_inproc(transfer_id: str, payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post(
+            f"/v1/transfers/{transfer_id}/transition",
+            json=payload,
+            headers=headers,
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _lookup_inproc(transfer_id: str, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}", headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _events_inproc(transfer_id: str, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _callback_inproc(payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post(
+            "/v1/transfers/callbacks/connector",
+            json=payload,
+            headers=headers,
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gw_client.create_transfer = _create_inproc
+    gw_client.transition_transfer = _transition_inproc
+    gw_client.get_transfer = _lookup_inproc
+    gw_client.list_transfer_events = _events_inproc
+    gw_client.connector_callback = _callback_inproc
+
+    # 1. Create and advance to SETTLED (reuse mock submit_payout path).
+    create = gateway_client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-rev-gw-1",
+            "recipient_phone_e164": "+15551010101",
+            "currency": "USD",
+            "amount_minor": 750,
+        },
+        headers={"Idempotency-Key": "rev-gw-contract-1", "X-Request-Id": "rev-create-1"},
+    )
+    assert create.status_code == 201
+    transfer_id = create.json()["transfer_id"]
+
+    for status in ("VALIDATED", "RESERVED"):
+        resp = gateway_client.post(
+            f"/v1/transfers/{transfer_id}/transition",
+            json={"status": status},
+        )
+        assert resp.status_code == 200
+
+    submitted = gateway_client.post(
+        f"/v1/transfers/{transfer_id}/transition",
+        json={"status": "SUBMITTED_TO_RAIL"},
+    )
+    assert submitted.status_code == 200
+    external_ref = submitted.json()["connector_external_ref"]
+    assert external_ref
+
+    # Register payout in connector store so callback can find it.
+    connector_client.post(
+        "/v1/connectors/mock-bank-a/payouts",
+        json={
+            "transfer_id": transfer_id,
+            "external_ref": external_ref,
+            "amount_minor": 750,
+            "currency": "USD",
+            "destination": "acct-rev-gw-1",
+        },
+    )
+
+    settled = gateway_client.post(
+        "/v1/transfers/callbacks/connector",
+        json={"external_ref": external_ref, "status": "CONFIRMED"},
+    )
+    assert settled.status_code == 200
+    assert settled.json()["status"] == "SETTLED"
+
+    # 2. Reverse the transfer via gateway with an explicit reason.
+    reversal_reason = "chargeback_accepted"
+    reversed_resp = gateway_client.post(
+        f"/v1/transfers/{transfer_id}/transition",
+        json={"status": "REVERSED", "failure_reason": reversal_reason},
+        headers={"X-Request-Id": "rev-transition-1"},
+    )
+    assert reversed_resp.status_code == 200
+    assert reversed_resp.json()["status"] == "REVERSED"
+    assert reversed_resp.json()["failure_reason"] == reversal_reason
+
+    # 3. Gateway lookup shows REVERSED.
+    lookup = gateway_client.get(
+        f"/v1/transfers/{transfer_id}",
+        headers={"X-Request-Id": "rev-lookup-1"},
+    )
+    assert lookup.status_code == 200
+    assert lookup.json()["status"] == "REVERSED"
+    assert lookup.json()["failure_reason"] == reversal_reason
+    assert lookup.headers.get("X-Request-Id") == "rev-lookup-1"
+
+    # 4. REVERSED is terminal — further transitions must be rejected.
+    rejected = gateway_client.post(
+        f"/v1/transfers/{transfer_id}/transition",
+        json={"status": "SETTLED", "failure_reason": "re_settle"},
+    )
+    assert rejected.status_code == 409
+
+    # 5. Events feed contains the REVERSED event with the reversal reason.
+    events_resp = gateway_client.get(
+        f"/v1/transfers/{transfer_id}/events",
+        headers={"X-Request-Id": "rev-events-1"},
+    )
+    assert events_resp.status_code == 200
+    events = events_resp.json()
+    reversed_events = [e for e in events if e.get("to_status") == "REVERSED"]
+    assert reversed_events, "expected at least one REVERSED event"
+    assert reversed_events[-1]["failure_reason"] == reversal_reason
+    assert any(e.get("to_status") == "SETTLED" for e in events)
+
+
+
+
+def test_gateway_ledger_posting_on_submission_contract(
+    gateway_client, orchestrator_client, ledger_client
+) -> None:
+    """After a transfer reaches SUBMITTED_TO_RAIL via the gateway, the sender's
+    ledger balance reflects the debit and the transit account reflects the credit."""
+
+    # 1. Create ledger accounts directly in the ledger service.
+    sender_acct_resp = ledger_client.post(
+        "/v1/ledger/accounts",
+        json={
+            "owner_type": "USER",
+            "owner_id": "u-led-gw-1",
+            "account_type": "USER_AVAILABLE",
+            "currency": "USD",
+        },
+    )
+    assert sender_acct_resp.status_code == 201
+    sender_acct_id = sender_acct_resp.json()["account_id"]
+
+    transit_acct_resp = ledger_client.post(
+        "/v1/ledger/accounts",
+        json={
+            "owner_type": "SYSTEM",
+            "owner_id": "transit-pool",
+            "account_type": "CONNECTOR_SETTLEMENT",
+            "currency": "USD",
+        },
+    )
+    assert transit_acct_resp.status_code == 201
+    transit_acct_id = transit_acct_resp.json()["account_id"]
+
+    # 2. Seed the sender's balance via a treasury DEBIT → sender CREDIT adjustment.
+    treasury_resp = ledger_client.post(
+        "/v1/ledger/accounts",
+        json={
+            "owner_type": "SYSTEM",
+            "owner_id": "treasury",
+            "account_type": "TREASURY",
+            "currency": "USD",
+        },
+    )
+    assert treasury_resp.status_code == 201
+    treasury_acct_id = treasury_resp.json()["account_id"]
+
+    seed = ledger_client.post(
+        "/v1/ledger/postings",
+        json={
+            "external_ref": "seed-led-gw-1",
+            "transfer_id": "seed-transfer-1",
+            "entry_type": "ADJUSTMENT",
+            "postings": [
+                {"account_id": treasury_acct_id, "direction": "DEBIT", "amount_minor": 50000, "currency": "USD"},
+                {"account_id": sender_acct_id, "direction": "CREDIT", "amount_minor": 50000, "currency": "USD"},
+            ],
+        },
+    )
+    assert seed.status_code == 201
+    bal_before = ledger_client.get(f"/v1/ledger/accounts/{sender_acct_id}/balance")
+    assert bal_before.json()["balance_minor"] == 50000
+
+    # 3. Wire gateway → orchestrator in-process.
+    gw_xfer_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers" and getattr(r, "methods", None) == {"POST"}
+    )
+    gw_client = gw_xfer_route.endpoint.__globals__["_client"]
+
+    async def _create_inproc(payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post("/v1/transfers", json=payload, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _transition_inproc(transfer_id: str, payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post(
+            f"/v1/transfers/{transfer_id}/transition", json=payload, headers=headers
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gw_client.create_transfer = _create_inproc
+    gw_client.transition_transfer = _transition_inproc
+
+    # 4. Get the orchestrator's service module dict to monkeypatch.
+    #    sys.modules["app.domain.service"] is unsafe — _load_service() overwrites
+    #    it for each service loaded after the orchestrator.  Using the class's
+    #    method __globals__ gives us the exact dict for the orchestrator service.
+    orch_transition_route = next(
+        r for r in orchestrator_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers/{transfer_id}/transition"
+    )
+    orch_cls = orch_transition_route.endpoint.__globals__["PaymentOrchestratorService"]
+    svc_dict = orch_cls.transition_transfer.__globals__
+
+    def _inproc_post_entry(transfer):
+        resp = ledger_client.post(
+            "/v1/ledger/postings",
+            json={
+                "external_ref": f"payout-{transfer.transfer_id}",
+                "transfer_id": transfer.transfer_id,
+                "entry_type": "TRANSFER",
+                "postings": [
+                    {
+                        "account_id": transfer.sender_ledger_account_id,
+                        "direction": "DEBIT",
+                        "amount_minor": transfer.amount_minor,
+                        "currency": transfer.currency,
+                    },
+                    {
+                        "account_id": transfer.transit_ledger_account_id,
+                        "direction": "CREDIT",
+                        "amount_minor": transfer.amount_minor,
+                        "currency": transfer.currency,
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 201
+        return {"ok": "true", "entry_id": resp.json()["entry_id"]}
+
+    original_post_entry = svc_dict["post_transfer_entry"]
+    original_ledger_enabled = svc_dict["settings"].ledger_posting_enabled
+    svc_dict["post_transfer_entry"] = _inproc_post_entry
+    svc_dict["settings"].ledger_posting_enabled = True
+
+    try:
+        # 5. Create transfer via gateway supplying the ledger account IDs.
+        create = gateway_client.post(
+            "/v1/transfers",
+            json={
+                "sender_user_id": "u-led-gw-1",
+                "recipient_phone_e164": "+15551212121",
+                "currency": "USD",
+                "amount_minor": 1500,
+                "sender_ledger_account_id": sender_acct_id,
+                "transit_ledger_account_id": transit_acct_id,
+            },
+            headers={"Idempotency-Key": "led-gw-contract-1"},
+        )
+        assert create.status_code == 201
+        transfer_id = create.json()["transfer_id"]
+        assert create.json()["sender_ledger_account_id"] == sender_acct_id
+        assert create.json()["transit_ledger_account_id"] == transit_acct_id
+
+        # 6. Advance to SUBMITTED_TO_RAIL — ledger posting fires here.
+        gateway_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "VALIDATED"})
+        gateway_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "RESERVED"})
+        submitted = gateway_client.post(
+            f"/v1/transfers/{transfer_id}/transition", json={"status": "SUBMITTED_TO_RAIL"}
+        )
+        assert submitted.status_code == 200
+        assert submitted.json()["status"] == "SUBMITTED_TO_RAIL"
+
+        # 7. Sender balance must be deducted by 1500.
+        sender_bal = ledger_client.get(f"/v1/ledger/accounts/{sender_acct_id}/balance")
+        assert sender_bal.json()["balance_minor"] == 50000 - 1500
+
+        # 8. Transit account must be credited by 1500.
+        transit_bal = ledger_client.get(f"/v1/ledger/accounts/{transit_acct_id}/balance")
+        assert transit_bal.json()["balance_minor"] == 1500
+    finally:
+        svc_dict["post_transfer_entry"] = original_post_entry
+        svc_dict["settings"].ledger_posting_enabled = original_ledger_enabled

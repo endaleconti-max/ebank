@@ -35,6 +35,8 @@ class Transfer(Base):
         Enum(TransferStatus, name="transfer_status"), default=TransferStatus.CREATED, nullable=False
     )
     failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sender_ledger_account_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    transit_ledger_account_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

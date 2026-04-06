@@ -41,6 +41,8 @@ def create_transfer(
         currency=payload.currency,
         amount_minor=payload.amount_minor,
         note=payload.note,
+        sender_ledger_account_id=payload.sender_ledger_account_id,
+        transit_ledger_account_id=payload.transit_ledger_account_id,
     )
     return TransferResponse.model_validate(transfer)
 
