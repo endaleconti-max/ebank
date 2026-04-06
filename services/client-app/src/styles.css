@@ -15,6 +15,10 @@
   box-sizing: border-box;
 }
 
+.hidden {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
@@ -103,6 +107,12 @@ p {
   align-items: center;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .eyebrow {
   color: var(--muted);
   font-size: 0.8rem;
@@ -126,6 +136,54 @@ p {
 
 .list-panel {
   grid-column: span 7;
+}
+
+.auth-panel {
+  grid-column: 1 / -1;
+}
+
+.summary-panel {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  width: min(700px, 100%);
+}
+
+.summary-grid article {
+  border: 1px solid var(--stroke);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 0.65rem;
+}
+
+.summary-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+}
+
+.summary-grid strong {
+  font-size: 1.15rem;
+}
+
+.auth-form {
+  display: flex;
+  gap: 0.7rem;
+  align-items: end;
+}
+
+.auth-form label {
+  flex: 1;
 }
 
 .detail-panel {
@@ -366,6 +424,15 @@ select:focus {
 }
 
 @media (max-width: 980px) {
+  .summary-panel {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .summary-grid {
+    width: 100%;
+  }
+
   .send-panel,
   .list-panel,
   .detail-panel {
@@ -388,9 +455,17 @@ select:focus {
     align-items: flex-start;
   }
 
+  .topbar-actions,
+  .auth-form {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .form-grid,
   .filters,
-  .details-grid {
+  .details-grid,
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 

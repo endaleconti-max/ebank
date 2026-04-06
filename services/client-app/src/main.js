@@ -13,6 +13,20 @@ const transferForm = document.getElementById("transferForm");
 const sendBtn = document.getElementById("sendBtn");
 const formFeedback = document.getElementById("formFeedback");
 
+const authPanelEl = document.getElementById("authPanel");
+const authForm = document.getElementById("authForm");
+const authUserIdEl = document.getElementById("authUserId");
+const signOutBtn = document.getElementById("signOutBtn");
+const summaryPanelEl = document.getElementById("summaryPanel");
+const sendPanelEl = document.getElementById("sendPanel");
+const listPanelEl = document.getElementById("listPanel");
+const detailPanelEl = document.getElementById("detailPanel");
+
+const welcomeTitleEl = document.getElementById("welcomeTitle");
+const statsCountEl = document.getElementById("statsCount");
+const statsTotalEl = document.getElementById("statsTotal");
+const statsStatusEl = document.getElementById("statsStatus");
+
 const transferListEl = document.getElementById("transferList");
 const transferDetailsEl = document.getElementById("transferDetails");
 const eventsListEl = document.getElementById("eventsList");
@@ -24,12 +38,16 @@ const cancelTransferBtn = document.getElementById("cancelTransferBtn");
 
 const filterSenderEl = document.getElementById("filterSender");
 const filterStatusEl = document.getElementById("filterStatus");
+const senderUserIdEl = document.getElementById("senderUserId");
+
+const SESSION_KEY = "ebank.client.user";
 
 const state = {
   transfers: [],
   selectedTransferId: null,
   loadingList: false,
   loadingDetails: false,
+  signedInUserId: null,
 };
 
 const currencyDecimals = {
@@ -65,11 +83,67 @@ function moneyLabel(transfer) {
   return `${currency} ${value.toFixed(decimals)}`;
 }
 
+function formatMinor(minor, currency = "USD") {
+  const decimals = currencyDecimals[currency] ?? 2;
+  const value = minor / Math.pow(10, decimals);
+  return `${currency} ${value.toFixed(decimals)}`;
+}
+
 function formatDateTime(value) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function applyAuthState() {
+  const isSignedIn = Boolean(state.signedInUserId);
+
+  authPanelEl.classList.toggle("hidden", isSignedIn);
+  summaryPanelEl.classList.toggle("hidden", !isSignedIn);
+  sendPanelEl.classList.toggle("hidden", !isSignedIn);
+  listPanelEl.classList.toggle("hidden", !isSignedIn);
+  detailPanelEl.classList.toggle("hidden", !isSignedIn);
+  signOutBtn.classList.toggle("hidden", !isSignedIn);
+
+  if (isSignedIn) {
+    welcomeTitleEl.textContent = `Hello, ${state.signedInUserId}`;
+    senderUserIdEl.value = state.signedInUserId;
+    senderUserIdEl.readOnly = true;
+    filterSenderEl.value = state.signedInUserId;
+  } else {
+    welcomeTitleEl.textContent = "Hello";
+    senderUserIdEl.readOnly = false;
+    state.transfers = [];
+    state.selectedTransferId = null;
+    renderTransferList();
+    renderTransferDetails(null);
+    renderEvents([]);
+    setSummaryStats();
+  }
+}
+
+function setSignedInUser(userId) {
+  state.signedInUserId = userId;
+  if (userId) {
+    window.localStorage.setItem(SESSION_KEY, userId);
+  } else {
+    window.localStorage.removeItem(SESSION_KEY);
+  }
+  applyAuthState();
+}
+
+function setSummaryStats() {
+  const myTransfers = state.signedInUserId
+    ? state.transfers.filter((transfer) => transfer.sender_user_id === state.signedInUserId)
+    : [];
+
+  const totalMinor = myTransfers.reduce((sum, transfer) => sum + transfer.amount_minor, 0);
+  const latest = myTransfers[0];
+
+  statsCountEl.textContent = String(myTransfers.length);
+  statsTotalEl.textContent = formatMinor(totalMinor, latest?.currency || "USD");
+  statsStatusEl.textContent = latest?.status || "-";
 }
 
 function renderTransferList() {
@@ -169,14 +243,14 @@ async function loadGatewayStatus() {
 }
 
 async function loadTransfers() {
-  if (state.loadingList) return;
+  if (!state.signedInUserId || state.loadingList) return;
   state.loadingList = true;
   refreshListBtn.disabled = true;
   applyFiltersBtn.disabled = true;
 
   try {
     const data = await listTransfers({
-      senderUserId: filterSenderEl.value.trim(),
+      senderUserId: filterSenderEl.value.trim() || state.signedInUserId,
       status: filterStatusEl.value,
       limit: 30,
     });
@@ -190,6 +264,7 @@ async function loadTransfers() {
     }
 
     renderTransferList();
+    setSummaryStats();
   } catch (error) {
     transferListEl.innerHTML = `<div class="empty">${error.message}</div>`;
   } finally {
@@ -223,13 +298,29 @@ async function loadTransferDetails(transferId = state.selectedTransferId) {
   }
 }
 
+authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const userId = authUserIdEl.value.trim();
+  if (!userId) return;
+
+  setSignedInUser(userId);
+  state.selectedTransferId = null;
+  renderTransferDetails(null);
+  renderEvents([]);
+  await loadTransfers();
+});
+
+signOutBtn.addEventListener("click", () => {
+  setSignedInUser(null);
+});
+
 transferForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   setFeedback("");
   sendBtn.disabled = true;
 
   const formData = new FormData(transferForm);
-  const sender_user_id = String(formData.get("senderUserId") || "").trim();
+  const sender_user_id = state.signedInUserId || String(formData.get("senderUserId") || "").trim();
   const recipient_phone_e164 = String(formData.get("recipientPhone") || "").trim();
   const currency = String(formData.get("currency") || "USD").trim().toUpperCase();
   const noteValue = String(formData.get("note") || "").trim();
@@ -249,6 +340,7 @@ transferForm.addEventListener("submit", async (event) => {
     setFeedback(`Transfer created: ${transfer.transfer_id}`, "success");
     transferForm.reset();
     document.getElementById("currency").value = currency;
+    senderUserIdEl.value = sender_user_id;
 
     state.selectedTransferId = transfer.transfer_id;
     await loadTransfers();
@@ -291,5 +383,12 @@ cancelTransferBtn.addEventListener("click", async () => {
   }
 });
 
+const persistedUser = window.localStorage.getItem(SESSION_KEY);
+if (persistedUser) {
+  setSignedInUser(persistedUser);
+  void loadTransfers();
+} else {
+  applyAuthState();
+}
+
 void loadGatewayStatus();
-void loadTransfers();

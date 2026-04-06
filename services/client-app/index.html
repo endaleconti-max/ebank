@@ -22,10 +22,48 @@
           <p class="eyebrow">Customer App</p>
           <h1>eBank Pay</h1>
         </div>
-        <div class="gateway-status" id="gatewayStatus">Checking API gateway...</div>
+        <div class="topbar-actions">
+          <div class="gateway-status" id="gatewayStatus">Checking API gateway...</div>
+          <button id="signOutBtn" class="btn ghost hidden" type="button">Sign out</button>
+        </div>
       </header>
 
-      <section class="card send-panel">
+      <section class="card auth-panel" id="authPanel">
+        <div class="panel-head">
+          <h2>Welcome</h2>
+          <p>Sign in to your wallet.</p>
+        </div>
+        <form id="authForm" class="auth-form" novalidate>
+          <label>
+            Your customer ID
+            <input id="authUserId" name="authUserId" placeholder="user-001" required maxlength="64" />
+          </label>
+          <button id="signInBtn" class="btn primary" type="submit">Continue</button>
+        </form>
+      </section>
+
+      <section class="card summary-panel hidden" id="summaryPanel">
+        <div>
+          <p class="eyebrow">Account</p>
+          <h2 id="welcomeTitle">Hello</h2>
+        </div>
+        <div class="summary-grid">
+          <article>
+            <span>Transfers</span>
+            <strong id="statsCount">0</strong>
+          </article>
+          <article>
+            <span>Sent total</span>
+            <strong id="statsTotal">USD 0.00</strong>
+          </article>
+          <article>
+            <span>Last status</span>
+            <strong id="statsStatus">-</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="card send-panel hidden" id="sendPanel">
         <div class="panel-head">
           <h2>Send money</h2>
           <p>Fast transfer by mobile number.</p>
@@ -56,7 +94,7 @@
         <p class="feedback" id="formFeedback" role="status" aria-live="polite"></p>
       </section>
 
-      <section class="card list-panel">
+      <section class="card list-panel hidden" id="listPanel">
         <div class="panel-head">
           <h2>Recent transfers</h2>
           <button id="refreshListBtn" class="btn ghost" type="button">Refresh</button>
@@ -77,7 +115,7 @@
         <div id="transferList" class="transfer-list"></div>
       </section>
 
-      <section class="card detail-panel">
+      <section class="card detail-panel hidden" id="detailPanel">
         <div class="panel-head">
           <h2>Transfer details</h2>
           <div class="detail-actions">
