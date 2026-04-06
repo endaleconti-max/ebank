@@ -69,7 +69,7 @@
           <p>Fast transfer by mobile number.</p>
         </div>
         <form id="transferForm" class="form-grid" novalidate>
-          <label>
+          <label id="senderIdLabel">
             Sender ID
             <input id="senderUserId" name="senderUserId" placeholder="user-001" required maxlength="64" />
           </label>
@@ -124,12 +124,14 @@
           </div>
         </div>
         <div id="transferDetails" class="details-empty">Select a transfer to view details.</div>
-        <div>
+        <div class="events-section">
           <h3>Events</h3>
           <ul id="eventsList" class="events"></ul>
         </div>
       </section>
     </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script type="module" src="./src/main.js"></script>
   </body>

@@ -403,6 +403,103 @@ select:focus {
   text-align: center;
 }
 
+/* ── Status badges ─────────────────────────────────── */
+
+.badge {
+  display: inline-block;
+  padding: 0.18em 0.55em;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.badge-created   { background: #fef3c7; color: #92400e; }
+.badge-validated { background: #dbeafe; color: #1e40af; }
+.badge-reserved  { background: #ede9fe; color: #5b21b6; }
+.badge-submitted { background: #cffafe; color: #155e75; }
+.badge-settled   { background: #d1fae5; color: #065f46; }
+.badge-failed    { background: #fee2e2; color: #991b1b; }
+.badge-default   { background: var(--bg-soft); color: var(--muted); }
+
+/* ── Toast notifications ───────────────────────────── */
+
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(120%);
+  background: var(--text);
+  color: #fff;
+  padding: 0.7rem 1.25rem;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 500;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.22);
+  z-index: 9999;
+  transition: transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.toast-error {
+  background: #991b1b;
+}
+
+/* ── Shimmer / skeleton loading ────────────────────── */
+
+@keyframes shimmer {
+  from { background-position: -400px 0; }
+  to   { background-position:  400px 0; }
+}
+
+.skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, #e8ede9 25%, #f4f7f5 50%, #e8ede9 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+  height: 1em;
+  display: block;
+}
+
+.skeleton-card {
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+/* ── Polling indicator ─────────────────────────────── */
+
+.polling-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+  margin-left: 0.35rem;
+  vertical-align: middle;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
+}
+
+/* ── Events section gap ────────────────────────────── */
+
+.events-section {
+  margin-top: 1.2rem;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
