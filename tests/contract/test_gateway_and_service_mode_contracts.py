@@ -1367,3 +1367,59 @@ def test_gateway_full_e2e_happy_path_contract(
     assert any(e.get("to_status") == "RESERVED" for e in events)
     assert any(e.get("to_status") == "SUBMITTED_TO_RAIL" for e in events)
     assert any(e.get("to_status") == "SETTLED" for e in events)
+
+
+def test_gateway_idempotency_contract(gateway_client, orchestrator_client) -> None:
+    """Duplicate create-transfer requests with the same Idempotency-Key are
+    short-circuited by the gateway middleware: the upstream orchestrator is
+    called exactly once and both responses carry the same transfer_id."""
+
+    # Wire gateway create-transfer in-process to orchestrator so we can count calls.
+    gw_xfer_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers" and getattr(r, "methods", None) == {"POST"}
+    )
+    gw_client = gw_xfer_route.endpoint.__globals__["_client"]
+
+    call_count = {"n": 0}
+
+    async def _create_inproc(payload: dict, headers: dict) -> Any:
+        call_count["n"] += 1
+        resp = orchestrator_client.post("/v1/transfers", json=payload, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gw_client.create_transfer = _create_inproc
+
+    payload = {
+        "sender_user_id": "u-idem-gw-1",
+        "recipient_phone_e164": "+15550808080",
+        "currency": "USD",
+        "amount_minor": 250,
+    }
+    idem_key = "idem-gw-contract-1"
+
+    # First request — reaches the orchestrator.
+    first = gateway_client.post(
+        "/v1/transfers",
+        json=payload,
+        headers={"Idempotency-Key": idem_key},
+    )
+    assert first.status_code == 201
+    transfer_id = first.json()["transfer_id"]
+
+    # Second request with the same key+body — replayed by the gateway middleware.
+    second = gateway_client.post(
+        "/v1/transfers",
+        json=payload,
+        headers={"Idempotency-Key": idem_key},
+    )
+    assert second.status_code == 201
+    assert second.json()["transfer_id"] == transfer_id
+
+    # Orchestrator route was reached exactly once.
+    assert call_count["n"] == 1
+
+    # Request without an Idempotency-Key is rejected at the gateway.
+    no_key = gateway_client.post("/v1/transfers", json=payload)
+    assert no_key.status_code == 400
+    assert "Idempotency-Key" in no_key.json()["detail"]

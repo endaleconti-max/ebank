@@ -138,8 +138,12 @@ Immediate next implementation sequence:
 2. ~~Add contract coverage verifying the full CREATED→SETTLED lifecycle driven purely through gateway endpoints, with connector-gateway simulate-callback injected mid-flow and the final SETTLED state observable via gateway transfer lookup.~~ ✓ Done — `test_gateway_full_e2e_happy_path_contract` added and passing (24 contract tests total).
 
 Immediate next implementation sequence:
-1. Add idempotency enforcement to the api-gateway create-transfer route so that a second request with the same `Idempotency-Key` header returns the original response without forwarding to the orchestrator again.
-2. Add contract coverage verifying that a duplicate create-transfer request (same `Idempotency-Key`) through the gateway returns the cached first response rather than creating a second transfer.
+1. ~~Add idempotency enforcement to the api-gateway create-transfer route so that a second request with the same `Idempotency-Key` header returns the original response without forwarding to the orchestrator again.~~ ✓ Done — `IdempotencyMiddleware` (fingerprint-keyed in-memory cache, enforces header presence) already implemented; gateway unit tests `test_create_transfer_requires_idempotency_key` and `test_idempotency_replays_successful_create` already passing (15 gateway unit tests).
+2. ~~Add contract coverage verifying that a duplicate create-transfer request (same `Idempotency-Key`) through the gateway returns the cached first response rather than creating a second transfer.~~ ✓ Done — `test_gateway_idempotency_contract` added and passing (25 contract tests total).
+
+Immediate next implementation sequence:
+1. Add a `FAILED` terminal state transition to the payment-orchestrator so that transfers that cannot be submitted or that receive a terminal failure callback can be moved to `FAILED` status with a `failure_reason` field recorded.
+2. Add contract coverage verifying that a transfer transitioned to `FAILED` via the gateway returns `FAILED` status on lookup and the failure reason is present in the events feed.
 
 ## 1. Vision
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
