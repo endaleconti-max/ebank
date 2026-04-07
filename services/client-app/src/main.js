@@ -29,6 +29,7 @@ import { buildTransferEventsDigest } from "./eventDigest.js";
 import { buildFailedEventsDigest, getFailureEvents } from "./eventFailureDigest.js";
 import { buildFailedEventIdsText, formatFailureRateLabel, getFailedEventIds } from "./eventFailureInsights.js";
 import { buildFailureSnapshotText } from "./eventFailureSnapshot.js";
+import { buildFailureSnapshotReport } from "./eventFailureReport.js";
 import { buildTimelineRows } from "./eventTimelineLayout.js";
 import { buildRollingDateRange } from "./eventDateShortcuts.js";
 import { readStoredEventFilters, writeStoredEventFilters } from "./eventFilterState.js";
@@ -146,6 +147,7 @@ const copyEventsDigestBtnEl = document.getElementById("copyEventsDigestBtn");
 const copyFailedEventsDigestBtnEl = document.getElementById("copyFailedEventsDigestBtn");
 const copyFailedEventIdsBtnEl = document.getElementById("copyFailedEventIdsBtn");
 const copyFailureSnapshotBtnEl = document.getElementById("copyFailureSnapshotBtn");
+const downloadFailureReportBtnEl = document.getElementById("downloadFailureReportBtn");
 
 const refreshListBtn    = document.getElementById("refreshListBtn");
 const applyFiltersBtn   = document.getElementById("applyFiltersBtn");
@@ -355,6 +357,7 @@ function syncEventExportButtons() {
   if (copyFailedEventsDigestBtnEl) copyFailedEventsDigestBtnEl.disabled = !state.selectedTransferId || !hasFailureEvents;
   if (copyFailedEventIdsBtnEl) copyFailedEventIdsBtnEl.disabled = !state.selectedTransferId || !hasFailureEvents;
   if (copyFailureSnapshotBtnEl) copyFailureSnapshotBtnEl.disabled = !state.selectedTransferId || !hasFailureEvents;
+  if (downloadFailureReportBtnEl) downloadFailureReportBtnEl.disabled = !state.selectedTransferId || !hasFailureEvents;
 }
 
 function syncEventRowNavigationButtons() {
@@ -1537,6 +1540,29 @@ async function copyFailureSnapshot() {
   }
 }
 
+function downloadFailureReport() {
+  if (!state.selectedTransferId) {
+    showToast("Select a transfer before downloading failure report.", true);
+    return;
+  }
+
+  const visibleEvents = getVisibleTransferEvents();
+  const failedIds = getFailedEventIds(visibleEvents);
+  if (!failedIds.length) {
+    showToast("No failed events in current view.", true);
+    return;
+  }
+
+  const report = buildFailureSnapshotReport({
+    transferId: state.selectedTransferId,
+    events: visibleEvents,
+    filterQuery: buildEventFilterQueryString(state.eventFilters),
+  });
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  downloadBlob(report, "text/plain;charset=utf-8", `failure-snapshot-${state.selectedTransferId}-${dateStamp}.txt`);
+  showToast("Failure report downloaded.");
+}
+
 async function copyEventFiltersQuery() {
   const query = buildEventFilterQueryString(state.eventFilters);
   if (!query) {
@@ -1705,6 +1731,7 @@ copyEventsDigestBtnEl.addEventListener("click", () => { void copyFilteredTransfe
 copyFailedEventsDigestBtnEl.addEventListener("click", () => { void copyFailedTransferEventsDigest(); });
 copyFailedEventIdsBtnEl.addEventListener("click", () => { void copyFailedEventIds(); });
 copyFailureSnapshotBtnEl.addEventListener("click", () => { void copyFailureSnapshot(); });
+downloadFailureReportBtnEl.addEventListener("click", downloadFailureReport);
 
 [eventTypeFilterEl, eventStatusFilterEl, eventDateFromEl, eventDateToEl].forEach((el) => {
   el.addEventListener("change", () => {
@@ -1757,6 +1784,10 @@ window.addEventListener("keydown", (event) => {
   }
   if (action === "copy-failure-snapshot") {
     void copyFailureSnapshot();
+    return;
+  }
+  if (action === "download-failure-report") {
+    downloadFailureReport();
     return;
   }
   if (action === "sort-events-newest") {
