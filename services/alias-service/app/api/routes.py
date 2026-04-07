@@ -29,6 +29,7 @@ def verify_phone(payload: VerifyPhoneRequest, db: Session = Depends(get_db)):
         verification_id=record.verification_id,
         phone_e164=record.phone_e164,
         verified=record.verified,
+        verified_at=record.verified_at,
     )
 
 

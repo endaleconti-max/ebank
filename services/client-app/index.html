@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>eBank - Send Money</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -10,57 +13,54 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./src/styles.css" />
+    <style>
+      html, body {
+        background-color: #0d57d8;
+        background-image: linear-gradient(0deg, #0a429f 0%, #0d57d8 52%, #1387ff 100%);
+      }
+    </style>
+    <link rel="stylesheet" href="./src/styles.css?v=20260406-blue-ocean1" />
   </head>
-  <body>
+  <body style="background-color:#0d57d8;background-image:linear-gradient(0deg,#0a429f 0%,#0d57d8 52%,#1387ff 100%);">
     <div class="ambient ambient-left"></div>
     <div class="ambient ambient-right"></div>
 
     <main class="layout">
-      <header class="topbar card">
+      <header class="app-header">
         <div>
-          <p class="eyebrow">Customer App</p>
           <h1>eBank Pay</h1>
         </div>
-        <div class="topbar-actions">
+        <div class="app-header-actions">
           <div class="gateway-status" id="gatewayStatus">Checking API gateway...</div>
           <button id="signOutBtn" class="btn ghost hidden" type="button">Sign out</button>
         </div>
       </header>
 
-      <section class="card auth-panel" id="authPanel">
-        <div class="auth-tabs" role="tablist">
-          <button class="auth-tab active" id="tabSignIn" role="tab" aria-selected="true" type="button">Sign in</button>
-          <button class="auth-tab" id="tabRegister" role="tab" aria-selected="false" type="button">Register</button>
-        </div>
-
-        <div id="panelSignIn">
-          <p class="auth-subtitle">Enter your customer ID to continue.</p>
+      <section class="auth-panel" id="authPanel">
+        <div id="panelSignIn" class="auth-form-block auth-pill">
+          <div class="auth-pill-head">
+            <h2 class="auth-pill-title">Log in</h2>
+          </div>
           <form id="authForm" class="auth-form" novalidate>
             <label>
-              Customer ID
-              <input id="authUserId" name="authUserId" placeholder="user-001" required maxlength="64" />
+              <input id="authUserId" name="authUserId" placeholder="user-001" aria-label="Customer ID" required maxlength="64" />
             </label>
             <button id="signInBtn" class="btn primary" type="submit">Continue</button>
           </form>
         </div>
 
-        <div id="panelRegister" class="hidden">
-          <p class="auth-subtitle">Create a new account.</p>
-          <form id="registerForm" class="form-grid" novalidate>
+        <div id="panelRegister" class="auth-form-block auth-pill">
+          <div class="auth-pill-head">
+            <h2 class="auth-pill-title">Register</h2>
+          </div>
+          <form id="registerForm" class="form-grid auth-register-grid" novalidate>
             <label>
-              Full name
-              <input id="regFullName" name="regFullName" placeholder="Jane Smith" required maxlength="140" />
+              <input id="regFullName" name="regFullName" placeholder="Full name" aria-label="Full name" required maxlength="140" />
             </label>
             <label>
-              Country code
-              <input id="regCountry" name="regCountry" placeholder="US" required minlength="2" maxlength="2" />
+              <input id="regCountry" name="regCountry" placeholder="Country code" aria-label="Country code" required minlength="2" maxlength="2" />
             </label>
-            <label class="span-2">
-              Email
-              <input id="regEmail" name="regEmail" type="email" placeholder="jane@example.com" required />
-            </label>
-            <button id="registerBtn" class="btn primary span-2" type="submit">Create account</button>
+            <button id="registerBtn" class="btn primary" type="submit">Continue</button>
           </form>
           <p class="feedback" id="registerFeedback" role="status" aria-live="polite"></p>
         </div>
@@ -162,7 +162,10 @@
       <section class="card list-panel hidden" id="listPanel">
         <div class="panel-head">
           <h2>Recent transfers</h2>
-          <button id="refreshListBtn" class="btn ghost" type="button">Refresh</button>
+          <div class="detail-actions">
+            <button id="exportTransfersBtn" class="btn ghost" type="button">Export CSV</button>
+            <button id="refreshListBtn" class="btn ghost" type="button">Refresh</button>
+          </div>
         </div>
         <div class="filters">
           <input id="filterSender" placeholder="Filter by sender id" />
@@ -175,7 +178,24 @@
             <option value="SETTLED">SETTLED</option>
             <option value="FAILED">FAILED</option>
           </select>
+          <input id="filterSearch" placeholder="Search note or failure reason" />
+          <input id="filterDateFrom" type="date" aria-label="Created from" title="Created from" />
+          <input id="filterDateTo" type="date" aria-label="Created to" title="Created to" />
           <button id="applyFiltersBtn" class="btn ghost" type="button">Apply</button>
+        </div>
+        <div class="shortcut-row">
+          <span>Sample views</span>
+          <button id="transferShortcutFailedReview" class="btn ghost" type="button">Failed review</button>
+          <button id="transferShortcutNotes" class="btn ghost" type="button">Search "refund"</button>
+          <button id="transferShortcutToday" class="btn ghost" type="button">Created today</button>
+        </div>
+        <div class="presets-row">
+          <select id="transferPresetSelect" aria-label="Saved transfer filter presets">
+            <option value="">Saved transfer presets</option>
+          </select>
+          <button id="saveTransferPresetBtn" class="btn ghost" type="button">Save preset</button>
+          <button id="applyTransferPresetBtn" class="btn ghost" type="button">Apply preset</button>
+          <button id="deleteTransferPresetBtn" class="btn ghost" type="button">Delete preset</button>
         </div>
         <div id="transferList" class="transfer-list"></div>
         <div id="loadMoreRow" class="load-more-row hidden">
@@ -192,9 +212,97 @@
           </div>
         </div>
         <div id="transferDetails" class="details-empty">Select a transfer to view details.</div>
+        <div id="transferShareActions" class="detail-copy-actions hidden">
+          <button id="copyTransferIdBtn" class="btn ghost" type="button">Copy ID</button>
+          <button id="copyTransferRecipientBtn" class="btn ghost" type="button">Copy recipient</button>
+          <button id="copyTransferLinkBtn" class="btn ghost" type="button">Copy link</button>
+          <button id="shareTransferLinkBtn" class="btn ghost" type="button">Share link</button>
+        </div>
+        <div id="transferNoteEditor" class="note-editor hidden">
+          <div class="note-editor-head">
+            <h3>Transfer Note</h3>
+            <button id="saveTransferNoteBtn" class="btn ghost" type="button">Save note</button>
+          </div>
+          <textarea id="transferNoteInput" maxlength="140" placeholder="Add context for support or the recipient."></textarea>
+          <p id="transferNoteFeedback" class="feedback" role="status" aria-live="polite"></p>
+        </div>
         <div class="events-section">
-          <h3>Events</h3>
+          <div class="events-toolbar">
+            <h3>Events</h3>
+            <span id="eventVisibleCount" class="event-count-label">0 shown</span>
+            <span id="eventFailedCount" class="event-count-label">0 failed</span>
+            <div class="events-actions">
+              <button id="eventDensityComfortableBtn" class="btn ghost" type="button">Comfortable</button>
+              <button id="eventDensityCompactBtn" class="btn ghost" type="button">Compact</button>
+              <button id="eventSortOldestBtn" class="btn ghost" type="button">Oldest</button>
+              <button id="eventSortNewestBtn" class="btn ghost" type="button">Newest</button>
+              <button id="eventExpandPrevBtn" class="btn ghost" type="button">Prev event</button>
+              <button id="eventExpandNextBtn" class="btn ghost" type="button">Next event</button>
+              <button id="eventFailurePrevBtn" class="btn ghost" type="button">Prev failed</button>
+              <button id="eventFailureNextBtn" class="btn ghost" type="button">Next failed</button>
+              <button id="eventFailedOnlyToggleBtn" class="btn ghost" type="button">Failed only</button>
+              <button id="eventAutoApplyBtn" class="btn ghost" type="button">Auto apply: Off</button>
+              <button id="copyEventFiltersBtn" class="btn ghost" type="button">Copy filters</button>
+              <button id="exportEventsCsvBtn" class="btn ghost" type="button">Export CSV</button>
+              <button id="exportEventsJsonBtn" class="btn ghost" type="button">Export JSON</button>
+              <button id="copyEventsDigestBtn" class="btn ghost" type="button">Copy digest</button>
+              <button id="copyFailedEventsDigestBtn" class="btn ghost" type="button">Copy failed digest</button>
+            </div>
+            <div class="events-filters">
+              <select id="eventTypeFilter" aria-label="Filter events by type">
+                <option value="">All event types</option>
+                <option value="TRANSFER_CREATED">TRANSFER_CREATED</option>
+                <option value="TRANSFER_STATUS_TRANSITIONED">TRANSFER_STATUS_TRANSITIONED</option>
+                <option value="TRANSFER_PRECHECK_FAILED">TRANSFER_PRECHECK_FAILED</option>
+                <option value="TRANSFER_CONNECTOR_SUBMISSION_FAILED">TRANSFER_CONNECTOR_SUBMISSION_FAILED</option>
+                <option value="TRANSFER_CONNECTOR_CALLBACK_CONFIRMED">TRANSFER_CONNECTOR_CALLBACK_CONFIRMED</option>
+                <option value="TRANSFER_CONNECTOR_CALLBACK_FAILED">TRANSFER_CONNECTOR_CALLBACK_FAILED</option>
+                <option value="TRANSFER_CANCELLED">TRANSFER_CANCELLED</option>
+                <option value="TRANSFER_LEDGER_POSTING_FAILED">TRANSFER_LEDGER_POSTING_FAILED</option>
+                <option value="TRANSFER_LEDGER_REVERSAL_POSTING_FAILED">TRANSFER_LEDGER_REVERSAL_POSTING_FAILED</option>
+              </select>
+              <select id="eventStatusFilter" aria-label="Filter events by terminal status">
+                <option value="">All statuses</option>
+                <option value="CREATED">CREATED</option>
+                <option value="VALIDATED">VALIDATED</option>
+                <option value="RESERVED">RESERVED</option>
+                <option value="SUBMITTED_TO_RAIL">SUBMITTED_TO_RAIL</option>
+                <option value="SETTLED">SETTLED</option>
+                <option value="FAILED">FAILED</option>
+                <option value="REVERSED">REVERSED</option>
+              </select>
+              <button id="applyEventFiltersBtn" class="btn ghost" type="button">Apply</button>
+              <button id="clearEventFiltersBtn" class="btn ghost" type="button">Clear</button>
+              <input id="eventSearchFilter" placeholder="Search failure or event text" />
+              <input id="eventDateFrom" type="date" aria-label="Events from" title="Events from" />
+              <input id="eventDateTo" type="date" aria-label="Events to" title="Events to" />
+            </div>
+            <div id="eventActiveFilters" class="event-active-filters hidden"></div>
+            <p class="event-shortcut-hint" aria-label="Event keyboard shortcuts">
+              Shortcuts: Alt+Shift+C clear filters, Alt+Shift+X failed only, Alt+Shift+F copy filters, Alt+Shift+D copy digest, Alt+Shift+Y copy failed digest, Alt+Shift+J/K prev/next event, Alt+Shift+Q/W prev/next failed
+            </p>
+          </div>
+          <div class="shortcut-row shortcut-row-compact">
+            <span>Sample event views</span>
+            <button id="eventShortcutFailures" class="btn ghost" type="button">Failures</button>
+            <button id="eventShortcutSettlement" class="btn ghost" type="button">Settlement trail</button>
+            <button id="eventShortcutLast24h" class="btn ghost" type="button">Last 24h</button>
+            <button id="eventShortcutLast7d" class="btn ghost" type="button">Last 7d</button>
+            <button id="eventShortcutLast30d" class="btn ghost" type="button">Last 30d</button>
+          </div>
+          <div class="presets-row presets-row-compact">
+            <select id="eventPresetSelect" aria-label="Saved event filter presets">
+              <option value="">Saved event presets</option>
+            </select>
+            <button id="saveEventPresetBtn" class="btn ghost" type="button">Save preset</button>
+            <button id="applyEventPresetBtn" class="btn ghost" type="button">Apply preset</button>
+            <button id="deleteEventPresetBtn" class="btn ghost" type="button">Delete preset</button>
+          </div>
+          <div id="eventSummaryChips" class="event-summary-chips"></div>
           <ul id="eventsList" class="events"></ul>
+          <div id="eventLoadMoreRow" class="load-more-row hidden">
+            <button id="eventLoadMoreBtn" class="btn ghost" type="button">Load more events</button>
+          </div>
         </div>
       </section>
     </main>

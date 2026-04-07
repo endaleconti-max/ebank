@@ -150,14 +150,118 @@ Immediate next implementation sequence:
 2. ~~Add contract coverage verifying that a SETTLED transfer transitioned to `REVERSED` via the gateway exposes the `REVERSED` status on lookup and a reversal event in the events feed.~~ ✓ Done — `test_gateway_reversed_transition_contract` added: drives full SETTLED lifecycle through gateway, reverses with `chargeback_accepted` reason, asserts lookup + events feed + terminal (27 contract tests total).
 
 Immediate next implementation sequence:
-1. Add a ledger double-entry posting step to the payment-orchestrator's RESERVED→SUBMITTED_TO_RAIL transition so that funds are debited from the sender's wallet account and credited to the transit/escrow account at time of submission.
-2. Add contract coverage verifying that after a transfer reaches SUBMITTED_TO_RAIL via the gateway, the sender's ledger balance reflects the debit and the transit account reflects the credit.
-47. ledger double-entry posting wired into orchestrator RESERVED→SUBMITTED_TO_RAIL transition (`ledger_client.py`, `post_transfer_entry`, gated by `ledger_posting_enabled` config flag; new `sender_ledger_account_id` / `transit_ledger_account_id` optional fields on Transfer model and schemas)
-48. contract test `test_gateway_ledger_posting_on_submission_contract` verifies sender balance debited and transit account credited after SUBMITTED_TO_RAIL; all suites green: 19 orchestrator + 15 gateway + 28 contract tests
+1. ~~Add a ledger double-entry posting step to the payment-orchestrator's RESERVED→SUBMITTED_TO_RAIL transition so that funds are debited from the sender's wallet account and credited to the transit/escrow account at time of submission.~~ ✓ Done — wired via `post_transfer_entry` in `services/payment-orchestrator/app/domain/service.py`, gated by `ledger_posting_enabled`, with new optional `sender_ledger_account_id` / `transit_ledger_account_id` fields.
+2. ~~Add contract coverage verifying that after a transfer reaches SUBMITTED_TO_RAIL via the gateway, the sender's ledger balance reflects the debit and the transit account reflects the credit.~~ ✓ Done — `test_gateway_ledger_posting_on_submission_contract` added in `tests/contract/test_gateway_and_service_mode_contracts.py`; test suites green: 19 orchestrator + 15 gateway + 28 contract tests.
 
 Immediate next implementation sequence:
-1. Add a ledger double-entry reversal posting to the payment-orchestrator's SETTLED→REVERSED transition so that the transit account is debited and the sender's wallet account is credited back at time of reversal.
-2. Add contract coverage verifying that after a SETTLED transfer is reversed via the gateway, the transit account balance reflects the debit-back and the sender's ledger balance reflects the credit-back.
+1. ~~Add a ledger double-entry reversal posting to the payment-orchestrator's SETTLED→REVERSED transition so that the transit account is debited and the sender's wallet account is credited back at time of reversal.~~ ✓ Done — `post_reversal_entry` is wired in `services/payment-orchestrator/app/domain/service.py` behind `ledger_posting_enabled`; orchestrator unit coverage includes enabled/disabled paths.
+2. ~~Add contract coverage verifying that after a SETTLED transfer is reversed via the gateway, the transit account balance reflects the debit-back and the sender's ledger balance reflects the credit-back.~~ ✓ Done — `test_gateway_ledger_reversal_posting_on_reversed_contract` added in `tests/contract/test_gateway_and_service_mode_contracts.py`; current suites green: 21 orchestrator + 15 gateway + 29 contract tests.
+
+Immediate next implementation sequence:
+1. ~~Add strict ledger posting error handling so `RESERVED -> SUBMITTED_TO_RAIL` and `SETTLED -> REVERSED` fail atomically (or move to a compensating FAILED state) when ledger posting returns `ok=false`.~~ ✓ Done — orchestrator now moves transfers to compensating `FAILED` with ledger-provided reason when `post_transfer_entry` or `post_reversal_entry` returns `ok != true`.
+2. ~~Add unit and contract coverage proving ledger failures do not silently progress transfer state and that failure reasons are exposed consistently via gateway lookup/events.~~ ✓ Done — added orchestrator unit tests for submission/reversal ledger failures and gateway contract tests asserting `FAILED` status + `failure_reason` in lookup/events; suites green: 23 orchestrator + 15 gateway + 31 contract tests.
+
+Immediate next implementation sequence:
+1. ~~Add explicit ledger failure event taxonomy and API filtering support (for example `TRANSFER_LEDGER_POSTING_FAILED` and `TRANSFER_LEDGER_REVERSAL_POSTING_FAILED`) in transfer-events queries to improve ops triage.~~ ✓ Done — payment-orchestrator and api-gateway transfer-events endpoints now accept `event_type` filtering and can isolate ledger failure events directly.
+2. ~~Add contract coverage proving gateway transfer-events retrieval can filter/identify ledger-failure events for failed transfers without scanning full lifecycle histories.~~ ✓ Done — gateway contract tests now assert filtered event retrieval for both submission and reversal ledger-failure cases; suites green: 24 orchestrator + 15 gateway + 31 contract tests.
+
+Immediate next implementation sequence:
+1. ~~Add transfer-event filtering by terminal transition status (`to_status`) so operations can query only failed or reversed lifecycle events without coupling to event-type names.~~ ✓ Done — orchestrator and gateway transfer-events endpoints now accept `to_status` filtering and apply it at query time.
+2. ~~Add contract coverage proving gateway event retrieval can isolate `FAILED` terminal events from mixed histories via `to_status` filtering.~~ ✓ Done — gateway contract tests assert `to_status=FAILED` returns only failed terminal events for both ledger submission and reversal failure flows; suites green: 24 orchestrator + 15 gateway + 31 contract tests.
+
+Immediate next implementation sequence:
+1. ~~Add combined transfer-events filter support (`event_type` + `to_status` together) validation with explicit invalid-value handling for `to_status` at the gateway boundary.~~ ✓ Done — api-gateway now validates `to_status` against allowed transfer statuses before proxying and supports combined filter passthrough.
+2. ~~Add unit and contract coverage verifying combined filters narrow results deterministically and invalid `to_status` values return a stable 422 response shape.~~ ✓ Done — gateway unit and contract coverage now assert combined filter narrowing and stable 422 responses for invalid `to_status`.
+
+Immediate next implementation sequence:
+1. ~~Add client-app event filtering controls in the transfer details panel so operators can filter by failure event type and terminal status without manual query-string edits.~~ ✓ Done — client-app detail panel now provides event-type and terminal-status filter controls wired to gateway event query parameters.
+2. ~~Add a lightweight server-side event summary/counts endpoint for ops dashboards so clients can render filter chips with counts without fetching the full event history.~~ ✓ Done — added `/v1/transfers/{transfer_id}/events/summary` in orchestrator and gateway passthrough, and client-app renders summary chips from server counts; suites green: 25 orchestrator + 17 gateway + 33 contract tests.
+
+Immediate next implementation sequence:
+1. ~~Add paginated transfer-events retrieval (`limit` + cursor) so large histories can be loaded incrementally without long payloads.~~ ✓ Done — orchestrator transfer-events now supports `limit` + `cursor` and emits `X-Next-Cursor`; api-gateway forwards both query params and cursor header.
+2. ~~Add unit and contract coverage proving gateway passthrough preserves event ordering and cursor semantics across multi-page event histories.~~ ✓ Done — added orchestrator unit, gateway unit, and contract pagination tests validating ordered, non-overlapping pages and cursor progression; suites green: 26 orchestrator + 18 gateway + 34 contract tests.
+
+Immediate next implementation sequence:
+1. ~~Add client-app incremental event loading (`Load more events`) that uses paginated transfer-events cursors instead of refetching the full event list on each detail refresh.~~ ✓ Done — client-app detail view now fetches events with paginated cursors and appends pages via `Load more events`.
+2. ~~Add client-app integration tests (or lightweight unit tests for state reducers/helpers) verifying event pagination appends in order, de-duplicates, and resets correctly when filters change.~~ ✓ Done — added lightweight Node tests for event-feed append ordering, deduplication by `event_id`, and filter-change reset detection; `node --test services/client-app/src/eventFeedState.test.js` passes (3/3).
+
+Immediate next implementation sequence:
+1. ~~Add date-range filtering for transfer history and event timelines so customers can narrow long histories without relying only on status filters.~~ ✓ Done — `created_at_from`/`created_at_to` params added to orchestrator service+routes, gateway passthrough, `api.js`, and date inputs in `index.html`; 27 orchestrator + 19 gateway + 35 contract tests green; `didEventFiltersChange` extended and 4/4 JS tests pass.
+2. ~~Add deep-linkable transfer detail selection in client-app so a specific transfer can be opened directly from a shared URL or support workflow.~~ ✓ Done — `?transfer=<id>` param written to URL on selection via `history.replaceState`, read on boot to auto-select; `deepLink.js` module with `getDeepLinkTransferId`/`buildDeepLinkUrl` helpers; 4/4 unit tests in `deepLink.test.js` pass.
+
+Immediate next implementation sequence:
+1. ~~Add transfer note/memo display and inline edit in the detail view so support teams and users can annotate transfers for clarification.~~ ✓ Done — added orchestrator `PATCH /v1/transfers/{transfer_id}/note`, gateway passthrough, client inline note editor, and end-to-end note update coverage; suites green: 28 orchestrator + 20 gateway + 36 contract.
+2. ~~Add transfer export (CSV download) for the visible filtered list so users and operators can pull records out of the app without querying the API directly.~~ ✓ Done — added client-side CSV export for the currently visible filtered transfer list with dedicated `transferExport.js` helper and 2 unit tests; combined client helper tests now pass: 10/10.
+
+Immediate next implementation sequence:
+1. ~~Add transfer detail copy/share actions (copy transfer ID, recipient, and deep-link URL) so support workflows can move faster from the detail pane.~~ ✓ Done — added client detail actions for copying transfer ID, recipient, and deep-link URL plus native share fallback behavior using `transferDetailActions.js`; helper tests included and passing.
+2. ~~Add saved filter presets for transfer history and event timelines so frequent operator views can be restored with one click.~~ ✓ Done — added localStorage-backed transfer and event filter presets with save/apply/delete controls and `filterPresets.js`; client helper suite now passes 15/15.
+
+Immediate next implementation sequence:
+1. ~~Add transfer timeline search/filter by free-text failure reason and note content so operators can isolate problematic transfers faster.~~ ✓ Done — added backend `q` search on transfer note/failure reason in orchestrator + gateway, client transfer search input, and client-side event timeline search over event/failure text; suites green: 29 orchestrator + 21 gateway + 37 contract, plus 20 client helper tests.
+2. ~~Add lightweight empty-state guidance and one-click sample preset shortcuts so first-time users discover filters and detail actions without trial and error.~~ ✓ Done — transfer/event empty states now explain next steps and sample views; added one-click shortcut buttons for common transfer and event investigations, integrated with existing filter/preset flows.
+
+Immediate next implementation sequence:
+1. ~~Add inline transfer list highlighting for matched free-text terms so operators can see why a transfer matched without opening every detail pane.~~ ✓ Done — transfer cards now show inline highlighted note/failure match context via `transferSearchHighlight.js`, so free-text search results explain themselves without opening the detail pane.
+2. ~~Add lightweight client-side keyboard shortcuts for common support actions (copy ID, copy link, reload details, apply saved preset) to speed up repeated workflows.~~ ✓ Done — added `Alt+Shift+I` copy ID, `Alt+Shift+L` copy link, `Alt+Shift+R` reload details, and `Alt+Shift+P` apply selected preset using `keyboardShortcuts.js`; client helper suite now passes 25/25.
+
+Immediate next implementation sequence:
+1. ~~Add transfer detail event export (CSV/JSON) for the currently filtered event timeline so support can attach exact audit trails to cases.~~ ✓ Done — detail view now exports the currently filtered event timeline as CSV or JSON via `eventExport.js` and toolbar export actions.
+2. ~~Add compact timeline density controls (comfortable/compact) and sticky detail actions so long event histories remain usable during investigations.~~ ✓ Done — added comfortable/compact density toggles, active-state button styling, and sticky detail header/copy action rows for long investigation sessions.
+
+Immediate next implementation sequence:
+1. ~~Enhance timeline JSON export with case-ready metadata (transfer ID, applied filters, generated timestamp, event count) so exports are self-describing in support workflows.~~ ✓ Done — `buildTransferEventsJson()` now emits a metadata envelope and export actions pass selected transfer ID + active filters + generated timestamp.
+2. ~~Persist timeline density preference across sessions so operators keep their chosen comfortable/compact mode after reloads.~~ ✓ Done — event density mode now reads/writes `ebank.client.event-density` in localStorage and restores on app boot.
+
+Immediate next implementation sequence:
+1. ~~Add event timeline sort controls (oldest/newest) in transfer details so investigators can switch chronology without changing backend query defaults.~~ ✓ Done — added oldest/newest controls in the events toolbar, wired client-side event ordering with deterministic timestamp+event ID sorting, and persisted preference via `ebank.client.event-sort`.
+2. ~~Add one-click copy for a filtered timeline digest so support can paste a concise audit narrative into case systems without downloading files.~~ ✓ Done — added `Copy digest` action that copies the currently visible filtered/sorted timeline as numbered plain text; covered by `eventDigest.test.js`.
+
+Immediate next implementation sequence:
+1. ~~Add day-grouped timeline rendering in transfer details so long histories are easier to scan across investigation windows.~~ ✓ Done — events are now rendered with date separator rows using `eventTimelineLayout.js`, while preserving existing filter/sort behavior.
+2. ~~Add a live visible/total event counter in the timeline toolbar so operators can immediately see filter impact without manual counting.~~ ✓ Done — toolbar now shows `shown of total` counts that update on filter/search/sort changes and reset cleanly when selection changes.
+
+Immediate next implementation sequence:
+1. ~~Add quick event date-range shortcuts (last 24h/7d/30d) so investigators can scope timelines in one click without manually setting both date inputs.~~ ✓ Done — added timeline date shortcut buttons wired via `eventDateShortcuts.js` to populate and apply rolling ranges.
+2. ~~Persist event filter state (type/status/search/date range) across reloads so investigation context survives session refreshes.~~ ✓ Done — event filters now read/write through `eventFilterState.js` and are restored on boot before detail loads.
+
+Immediate next implementation sequence:
+1. ~~Add active event-filter chips with one-click removal so operators can see and adjust current scope without reopening each control.~~ ✓ Done — active filters now render as removable chips (`eventFilterShare.js`) that clear individual criteria and reload the timeline.
+2. ~~Add one-click copy of the current event-filter query string so support teams can share reproducible investigation scope in tickets and chat.~~ ✓ Done — added `Copy filters` action that copies the active timeline filter query string from current UI state.
+
+Immediate next implementation sequence:
+1. ~~Add a one-click clear-all action in active event-filter chips so investigators can reset scope quickly after exploratory filtering.~~ ✓ Done — active filter chip row now includes a `Clear all` chip when multiple filters are active, wired to reset all event filters.
+2. ~~Extend keyboard shortcuts for event investigations (copy filters, copy digest, newest/oldest sort) so repeated timeline workflows are faster without mouse travel.~~ ✓ Done — added `Alt+Shift+F` copy filters, `Alt+Shift+D` copy digest, `Alt+Shift+N` newest-first sort, and `Alt+Shift+O` oldest-first sort with updated shortcut tests.
+
+Immediate next implementation sequence:
+1. ~~Add a sticky `Failed only` event toggle in the timeline actions so investigators can pivot to terminal failures without opening status filters.~~ ✓ Done — added `Failed only` action button that toggles `toStatus=FAILED` on/off from current event filter state.
+2. ~~Add an optional auto-apply mode for event filters so filter edits can refresh timeline results immediately without pressing Apply each time.~~ ✓ Done — added persisted `Auto apply` toggle (localStorage-backed) with debounced input/change listeners for event filter controls.
+
+Immediate next implementation sequence:
+1. ~~Add keyboard shortcuts for fast filter resets/pivots (`clear filters`, `toggle failed-only`) so investigators can iterate timeline scope without leaving the keyboard.~~ ✓ Done — added `Alt+Shift+C` clear event filters and `Alt+Shift+X` toggle failed-only mode, wired through the global shortcut handler.
+2. ~~Add inline event shortcut hint text near timeline controls so operators can discover the expanded key bindings without external docs.~~ ✓ Done — added an inline shortcut hint strip in the timeline controls showing core event investigation key combos.
+
+Immediate next implementation sequence:
+1. ~~Add verification lifecycle timestamping in alias-service so successful OTP verification records include a durable `verified_at` audit field for downstream support/compliance workflows.~~ ✓ Done — `PhoneVerification` now persists nullable `verified_at`, verify flow sets it on first successful OTP match, and `/v1/aliases/verify-phone` returns it in `VerifyPhoneResponse`.
+2. ~~Expand alias domain status taxonomy with explicit `VERIFIED` state so the model reflects pre-bind lifecycle semantics and future policy routing without enum churn.~~ ✓ Done — `AliasStatus` now includes `VERIFIED`; API test coverage added for `verified_at` lifecycle (`test_verify_phone_sets_verified_at_on_success`) and alias-service suite remains green.
+
+Immediate next implementation sequence:
+1. ~~Add a live failed-events visible counter beside the existing timeline visibility counter so investigators can instantly gauge failure density under current filters/sort without opening summary chips.~~ ✓ Done — added `eventFailedCount` in the toolbar, updated on every timeline render using currently visible events.
+2. ~~Add one-click copy for a failed-only timeline digest so support can paste just incident-relevant events into case notes without manual filtering/export steps.~~ ✓ Done — added `Copy failed digest` action plus `Alt+Shift+Y` shortcut, backed by `eventFailureDigest.js` to copy only failure-related events (FAILED status, FAILED event types, or events with `failure_reason`).
+
+Immediate next implementation sequence:
+1. ~~Add timeline actions to jump directly between failed events in the currently visible filtered timeline so investigators can triage incidents without stepping through non-failure rows.~~ ✓ Done — added `Prev failed` / `Next failed` controls that navigate across failure-related events (FAILED status, FAILED event types, or events with `failure_reason`) with wrap-around and auto-scroll.
+2. ~~Add keyboard shortcuts for failed-event stepping so support can move across failure checkpoints without pointer interaction during high-volume investigations.~~ ✓ Done — added `Alt+Shift+Q` (previous failed) and `Alt+Shift+W` (next failed), wired through the global shortcut handler and shortcut hint.
+
+Immediate next implementation sequence:
+1. ~~Add timeline toolbar controls to jump to previous/next visible event while keeping inline detail expansion in sync, so investigators can step through long histories without repeated pointer travel.~~ ✓ Done — added `Prev event` / `Next event` actions that move the expanded row across the current filtered+sorted visible timeline (with wrap-around), keep one expanded row active, and auto-scroll it into view.
+2. ~~Add keyboard shortcuts for expanded-event stepping so support users can navigate event-by-event entirely from the keyboard during investigations.~~ ✓ Done — added `Alt+Shift+J` (previous event) and `Alt+Shift+K` (next event) mappings, wired through the global shortcut handler and reflected in the inline shortcut hint.
+
+Immediate next implementation sequence:
+1. ~~Add collapsible per-event inline detail strip to the transfer events timeline so investigators can expand a single row to see all event fields (event_id, type, from/to status, failure reason, full ISO timestamp) without opening a separate view.~~ ✓ Done — clicking an event row in the timeline toggles an inline detail panel via `buildEventRowDetailHtml()`; only one row is expanded at a time and expansion resets when a new transfer is selected.
+2. ~~Add a per-event copy button so support can copy a compact structured text representation of any single event to the clipboard instantly during an investigation.~~ ✓ Done — each event row shows a hover-revealed copy icon (via `buildEventRowCopyText()` in `eventRowDetail.js`) that writes pipe-separated event fields and fires a toast; 48/48 client tests passing.
+1. ~~Sync active event filters into URL query params so current investigation scope remains shareable and browser-refresh safe.~~ ✓ Done — event filter state now updates URL params (`evType`, `evStatus`, `evFrom`, `evTo`, `evQ`) on each filter apply while preserving existing query params.
+2. ~~Restore event filters from URL on boot (overriding stored local filters when present) so shared links reopen exact timeline scope reliably.~~ ✓ Done — added URL filter parsing on startup and precedence over localStorage filters when URL filter params are present.
 
 ## 1. Vision
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.

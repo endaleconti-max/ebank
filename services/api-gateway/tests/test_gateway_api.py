@@ -198,7 +198,7 @@ def test_cancel_transfer_is_forwarded(monkeypatch) -> None:
 def test_transfer_events_are_forwarded(monkeypatch) -> None:
     from app.api import routes
 
-    calls = {"count": 0, "transfer_id": None, "request_id": None}
+    calls = {"count": 0, "transfer_id": None, "request_id": None, "params": None}
 
     class DummyResponse:
         def __init__(self, status_code: int, payload: list):
@@ -207,10 +207,11 @@ def test_transfer_events_are_forwarded(monkeypatch) -> None:
 
             self.content = json.dumps(payload).encode("utf-8")
 
-    async def fake_list_transfer_events(transfer_id: str, headers: dict):
+    async def fake_list_transfer_events(transfer_id: str, params: dict, headers: dict):
         calls["count"] += 1
         calls["transfer_id"] = transfer_id
         calls["request_id"] = headers.get("X-Request-Id")
+        calls["params"] = params
         return DummyResponse(
             200,
             [
@@ -222,7 +223,7 @@ def test_transfer_events_are_forwarded(monkeypatch) -> None:
     monkeypatch.setattr(routes._client, "list_transfer_events", fake_list_transfer_events)
 
     resp = client.get(
-        "/v1/transfers/t-events-1/events",
+        "/v1/transfers/t-events-1/events?event_type=TRANSFER_LEDGER_POSTING_FAILED&to_status=FAILED",
         headers={"X-Request-Id": "evt-req-1"},
     )
 
@@ -231,6 +232,101 @@ def test_transfer_events_are_forwarded(monkeypatch) -> None:
     assert calls["count"] == 1
     assert calls["transfer_id"] == "t-events-1"
     assert calls["request_id"] == "evt-req-1"
+    assert calls["params"] == {
+        "event_type": "TRANSFER_LEDGER_POSTING_FAILED",
+        "to_status": "FAILED",
+    }
+
+
+def test_transfer_events_pagination_is_forwarded(monkeypatch) -> None:
+    from app.api import routes
+
+    calls = {"count": 0, "params": None}
+
+    class DummyResponse:
+        def __init__(self, status_code: int, payload: list, headers=None):
+            self.status_code = status_code
+            import json
+
+            self.content = json.dumps(payload).encode("utf-8")
+            self.headers = headers or {}
+
+    async def fake_list_transfer_events(transfer_id: str, params: dict, headers: dict):
+        calls["count"] += 1
+        calls["params"] = params
+        return DummyResponse(
+            200,
+            [{"event_id": "e-1", "event_type": "TRANSFER_CREATED", "to_status": "CREATED"}],
+            headers={"X-Next-Cursor": "c-next-1"},
+        )
+
+    monkeypatch.setattr(routes._client, "list_transfer_events", fake_list_transfer_events)
+
+    resp = client.get("/v1/transfers/t-events-1/events?limit=1&cursor=c-1")
+
+    assert resp.status_code == 200
+    assert calls["count"] == 1
+    assert calls["params"] == {"limit": 1, "cursor": "c-1"}
+    assert resp.headers.get("X-Next-Cursor") == "c-next-1"
+
+
+def test_transfer_events_invalid_to_status_returns_422(monkeypatch) -> None:
+    from app.api import routes
+
+    calls = {"count": 0}
+
+    async def fake_list_transfer_events(transfer_id: str, params: dict, headers: dict):
+        calls["count"] += 1
+        raise AssertionError("upstream should not be called for invalid to_status")
+
+    monkeypatch.setattr(routes._client, "list_transfer_events", fake_list_transfer_events)
+
+    resp = client.get("/v1/transfers/t-events-1/events?to_status=NOT_A_STATUS")
+
+    assert resp.status_code == 422
+    assert calls["count"] == 0
+    assert resp.json()["detail"][0]["loc"] == ["query", "to_status"]
+
+
+def test_transfer_event_summary_is_forwarded(monkeypatch) -> None:
+    from app.api import routes
+
+    calls = {"count": 0, "transfer_id": None, "request_id": None}
+
+    class DummyResponse:
+        def __init__(self, status_code: int, payload: dict):
+            self.status_code = status_code
+            import json
+
+            self.content = json.dumps(payload).encode("utf-8")
+
+    async def fake_summary(transfer_id: str, headers: dict):
+        calls["count"] += 1
+        calls["transfer_id"] = transfer_id
+        calls["request_id"] = headers.get("X-Request-Id")
+        return DummyResponse(
+            200,
+            {
+                "transfer_id": transfer_id,
+                "total_events": 4,
+                "by_event_type": {"TRANSFER_CREATED": 1},
+                "by_to_status": {"FAILED": 1},
+            },
+        )
+
+    monkeypatch.setattr(routes._client, "get_transfer_event_summary", fake_summary)
+
+    resp = client.get(
+        "/v1/transfers/t-events-1/events/summary",
+        headers={"X-Request-Id": "evt-summary-req-1"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["transfer_id"] == "t-events-1"
+    assert resp.json()["by_to_status"]["FAILED"] == 1
+    assert calls["count"] == 1
+    assert calls["transfer_id"] == "t-events-1"
+    assert calls["request_id"] == "evt-summary-req-1"
 
 
 def test_connector_transaction_events_are_forwarded(monkeypatch) -> None:
@@ -501,3 +597,107 @@ def test_transfer_transition_is_forwarded(monkeypatch) -> None:
     assert calls["transfer_id"] == "t-trans-1"
     assert calls["payload"] == {"status": "VALIDATED"}
     assert calls["request_id"] == "trans-req-1"
+
+
+def test_transfer_date_range_params_are_forwarded(monkeypatch) -> None:
+    """Gateway forwards created_at_from/to for both transfer list and events."""
+    from app.api import routes
+    import json
+
+    list_calls: dict = {"params": None}
+    events_calls: dict = {"params": None}
+
+    class DummyResponse:
+        def __init__(self, status_code: int, payload):
+            self.status_code = status_code
+            self.content = json.dumps(payload).encode("utf-8")
+            self.headers: dict = {}
+
+    async def fake_list_transfers(params: dict, headers: dict):
+        list_calls["params"] = params
+        return DummyResponse(200, {"transfers": [], "next_cursor": None, "count": 0})
+
+    async def fake_list_events(transfer_id: str, params: dict, headers: dict):
+        events_calls["params"] = params
+        return DummyResponse(200, [])
+
+    monkeypatch.setattr(routes._client, "list_transfers", fake_list_transfers)
+    monkeypatch.setattr(routes._client, "list_transfer_events", fake_list_events)
+
+    resp_list = client.get("/v1/transfers", params={
+        "created_at_from": "2024-01-01T00:00:00Z",
+        "created_at_to": "2024-12-31T23:59:59Z",
+    })
+    assert resp_list.status_code == 200
+    assert list_calls["params"]["created_at_from"] == "2024-01-01T00:00:00Z"
+    assert list_calls["params"]["created_at_to"] == "2024-12-31T23:59:59Z"
+
+    resp_events = client.get("/v1/transfers/tid-dr-1/events", params={
+        "created_at_from": "2024-06-01T00:00:00Z",
+        "created_at_to": "2024-06-30T23:59:59Z",
+    })
+    assert resp_events.status_code == 200
+    assert events_calls["params"]["created_at_from"] == "2024-06-01T00:00:00Z"
+    assert events_calls["params"]["created_at_to"] == "2024-06-30T23:59:59Z"
+
+
+def test_transfer_note_update_is_forwarded(monkeypatch) -> None:
+    from app.api import routes
+
+    calls = {"count": 0, "transfer_id": None, "payload": None, "request_id": None}
+
+    class DummyResponse:
+        def __init__(self, status_code: int, payload: dict):
+            self.status_code = status_code
+            import json
+
+            self.content = json.dumps(payload).encode("utf-8")
+
+    async def fake_update_transfer_note(transfer_id: str, payload: dict, headers: dict):
+        calls["count"] += 1
+        calls["transfer_id"] = transfer_id
+        calls["payload"] = payload
+        calls["request_id"] = headers.get("X-Request-Id")
+        return DummyResponse(200, {"transfer_id": transfer_id, "note": payload.get("note")})
+
+    monkeypatch.setattr(routes._client, "update_transfer_note", fake_update_transfer_note)
+
+    resp = client.patch(
+        "/v1/transfers/t-note-1/note",
+        json={"note": "support annotation"},
+        headers={"X-Request-Id": "note-req-1"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["note"] == "support annotation"
+    assert calls["count"] == 1
+    assert calls["transfer_id"] == "t-note-1"
+    assert calls["payload"] == {"note": "support annotation"}
+    assert calls["request_id"] == "note-req-1"
+
+
+def test_transfer_list_search_is_forwarded(monkeypatch) -> None:
+    from app.api import routes
+
+    calls = {"count": 0, "params": None}
+
+    class DummyResponse:
+        def __init__(self, status_code: int, payload: dict):
+            self.status_code = status_code
+            import json
+
+            self.content = json.dumps(payload).encode("utf-8")
+
+    async def fake_list_transfers(params: dict, headers: dict):
+        calls["count"] += 1
+        calls["params"] = params
+        return DummyResponse(200, {"transfers": [], "next_cursor": None, "count": 0})
+
+    monkeypatch.setattr(routes._client, "list_transfers", fake_list_transfers)
+
+    resp = client.get("/v1/transfers", params={"sender_user_id": "u-list-1", "q": "dinner split"})
+
+    assert resp.status_code == 200
+    assert calls["count"] == 1
+    assert calls["params"]["sender_user_id"] == "u-list-1"
+    assert calls["params"]["q"] == "dinner split"

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -14,9 +15,11 @@ from app.domain.schemas import (
     CreateTransferRequest,
     TransferEventResponse,
     TransferEventRelayResponse,
+    TransferEventSummaryResponse,
     TransferListResponse,
     TransferResponse,
     TransitionTransferRequest,
+    UpdateTransferNoteRequest,
 )
 from app.domain.service import PaymentOrchestratorService
 from app.infrastructure.db import get_db
@@ -53,6 +56,9 @@ def list_transfers(
     transfer_status: Optional[TransferStatus] = Query(default=None, alias="status"),
     limit: int = Query(default=20, ge=1, le=100),
     cursor: Optional[str] = None,
+    created_at_from: Optional[datetime] = Query(default=None),
+    created_at_to: Optional[datetime] = Query(default=None),
+    q: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ):
     svc = PaymentOrchestratorService(db)
@@ -61,6 +67,9 @@ def list_transfers(
         status=transfer_status,
         limit=limit,
         cursor=cursor,
+        created_at_from=created_at_from,
+        created_at_to=created_at_to,
+        q=q,
     )
     return TransferListResponse(
         transfers=[TransferResponse.model_validate(t) for t in transfers],
@@ -74,6 +83,17 @@ def get_transfer(transfer_id: str, db: Session = Depends(get_db)):
     svc = PaymentOrchestratorService(db)
     try:
         transfer = svc.get_transfer(transfer_id)
+    except TransferNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return TransferResponse.model_validate(transfer)
+
+
+@router.patch("/transfers/{transfer_id}/note", response_model=TransferResponse)
+def update_transfer_note(transfer_id: str, payload: UpdateTransferNoteRequest, db: Session = Depends(get_db)):
+    svc = PaymentOrchestratorService(db)
+    try:
+        transfer = svc.update_transfer_note(transfer_id, payload.note)
     except TransferNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -123,14 +143,56 @@ def connector_callback(payload: ConnectorCallbackRequest, db: Session = Depends(
 
 
 @router.get("/transfers/{transfer_id}/events", response_model=list[TransferEventResponse])
-def list_transfer_events(transfer_id: str, db: Session = Depends(get_db)):
+def list_transfer_events(
+    transfer_id: str,
+    db: Session = Depends(get_db),
+    response: Response = None,
+    event_type: Optional[str] = Query(default=None),
+    to_status: Optional[TransferStatus] = Query(default=None),
+    limit: Optional[int] = Query(default=None, ge=1, le=200),
+    cursor: Optional[str] = Query(default=None),
+    created_at_from: Optional[datetime] = Query(default=None),
+    created_at_to: Optional[datetime] = Query(default=None),
+):
     svc = PaymentOrchestratorService(db)
     try:
-        events = svc.list_transfer_events(transfer_id)
+        if limit is None and cursor is None:
+            events = svc.list_transfer_events(
+                transfer_id=transfer_id,
+                event_type=event_type,
+                to_status=to_status,
+                created_at_from=created_at_from,
+                created_at_to=created_at_to,
+            )
+            if response is not None:
+                response.headers["X-Next-Cursor"] = ""
+        else:
+            events, next_cursor = svc.list_transfer_events_paginated(
+                transfer_id=transfer_id,
+                event_type=event_type,
+                to_status=to_status,
+                limit=limit or 50,
+                cursor=cursor,
+                created_at_from=created_at_from,
+                created_at_to=created_at_to,
+            )
+            if response is not None:
+                response.headers["X-Next-Cursor"] = next_cursor or ""
     except TransferNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     return [TransferEventResponse.model_validate(event) for event in events]
+
+
+@router.get("/transfers/{transfer_id}/events/summary", response_model=TransferEventSummaryResponse)
+def transfer_event_summary(transfer_id: str, db: Session = Depends(get_db)):
+    svc = PaymentOrchestratorService(db)
+    try:
+        summary = svc.summarize_transfer_events(transfer_id)
+    except TransferNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return TransferEventSummaryResponse(**summary)
 
 
 @router.post("/transfers/events/relay", response_model=TransferEventRelayResponse)

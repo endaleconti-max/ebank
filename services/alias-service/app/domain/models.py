@@ -1,6 +1,7 @@
 import enum
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Enum as SAEnum, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -9,6 +10,7 @@ from app.infrastructure.db import Base
 
 
 class AliasStatus(str, enum.Enum):
+    VERIFIED = "VERIFIED"
     BOUND = "BOUND"
     UNBOUND = "UNBOUND"
 
@@ -22,6 +24,7 @@ class PhoneVerification(Base):
     phone_e164: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     otp_code: Mapped[str] = mapped_column(String(6), nullable=False)
     verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

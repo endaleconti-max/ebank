@@ -5,14 +5,36 @@ import {
   createTransfer,
   createUser,
   getApiBase,
+  getTransferEventSummary,
   getTransfer,
   getTransferEvents,
   getUserStatus,
   listTransfers,
   resolveAlias,
   submitKyc,
+  updateTransferNote,
   verifyPhone,
 } from "./api.js";
+import { appendUniqueEvents, didEventFiltersChange } from "./eventFeedState.js";
+import { buildDeepLinkUrl, getDeepLinkTransferId } from "./deepLink.js";
+import { findFilterPreset, removeFilterPreset, upsertFilterPreset } from "./filterPresets.js";
+import { buildEventEmptyStateMessage, buildTransferEmptyStateMessage } from "./emptyStateGuidance.js";
+import { buildTransferDetailActionPayload } from "./transferDetailActions.js";
+import { getShortcutAction } from "./keyboardShortcuts.js";
+import { filterEventsBySearch } from "./timelineSearch.js";
+import { buildTransferSearchContext } from "./transferSearchHighlight.js";
+import { buildTransfersCsv } from "./transferExport.js";
+import { buildTransferEventsCsv, buildTransferEventsJson } from "./eventExport.js";
+import { buildTransferEventsDigest } from "./eventDigest.js";
+import { buildFailedEventsDigest, getFailureEvents } from "./eventFailureDigest.js";
+import { buildTimelineRows } from "./eventTimelineLayout.js";
+import { buildRollingDateRange } from "./eventDateShortcuts.js";
+import { readStoredEventFilters, writeStoredEventFilters } from "./eventFilterState.js";
+import { buildActiveEventFilterChips, buildEventFilterQueryString } from "./eventFilterShare.js";
+import { isFailedOnlyEnabled, toggleFailedOnlyStatus } from "./eventFilterModes.js";
+import { buildUrlWithEventFilters, readEventFiltersFromSearch } from "./eventFilterUrlState.js";
+import { buildEventRowDetailHtml, buildEventRowCopyText } from "./eventRowDetail.js";
+import { getAdjacentEventId, getAdjacentFailureEventId, isFailureEvent } from "./eventRowNavigation.js";
 
 // ── DOM refs ─────────────────────────────────────────
 const gatewayStatusEl   = document.getElementById("gatewayStatus");
@@ -31,8 +53,6 @@ const listPanelEl       = document.getElementById("listPanel");
 const detailPanelEl     = document.getElementById("detailPanel");
 const senderIdLabel     = document.getElementById("senderIdLabel");
 
-const tabSignIn         = document.getElementById("tabSignIn");
-const tabRegister       = document.getElementById("tabRegister");
 const panelSignIn       = document.getElementById("panelSignIn");
 const panelRegister     = document.getElementById("panelRegister");
 const registerForm      = document.getElementById("registerForm");
@@ -55,8 +75,18 @@ const phoneLinkBindBtnEl = document.getElementById("phoneLinkBindBtn");
 const phoneLinkCancelBtnEl = document.getElementById("phoneLinkCancelBtn");
 const phoneLinkBindFeedback = document.getElementById("phoneLinkBindFeedback");
 
-const loadMoreRowEl     = document.getElementById("loadMoreRow");
-const loadMoreBtnEl     = document.getElementById("loadMoreBtn");
+const loadMoreRowEl      = document.getElementById("loadMoreRow");
+const loadMoreBtnEl      = document.getElementById("loadMoreBtn");
+const exportTransfersBtnEl = document.getElementById("exportTransfersBtn");
+const transferPresetSelectEl = document.getElementById("transferPresetSelect");
+const saveTransferPresetBtnEl = document.getElementById("saveTransferPresetBtn");
+const applyTransferPresetBtnEl = document.getElementById("applyTransferPresetBtn");
+const deleteTransferPresetBtnEl = document.getElementById("deleteTransferPresetBtn");
+const transferShortcutFailedReviewBtnEl = document.getElementById("transferShortcutFailedReview");
+const transferShortcutNotesBtnEl = document.getElementById("transferShortcutNotes");
+const transferShortcutTodayBtnEl = document.getElementById("transferShortcutToday");
+const eventLoadMoreRowEl = document.getElementById("eventLoadMoreRow");
+const eventLoadMoreBtnEl = document.getElementById("eventLoadMoreBtn");
 
 const welcomeTitleEl    = document.getElementById("welcomeTitle");
 const statsCountEl      = document.getElementById("statsCount");
@@ -64,12 +94,59 @@ const statsTotalEl      = document.getElementById("statsTotal");
 const statsStatusEl     = document.getElementById("statsStatus");
 const statsKycEl        = document.getElementById("statsKyc");
 
-const transferListEl    = document.getElementById("transferList");
-const transferDetailsEl = document.getElementById("transferDetails");
-const eventsListEl      = document.getElementById("eventsList");
+const transferListEl     = document.getElementById("transferList");
+const transferDetailsEl  = document.getElementById("transferDetails");
+const transferShareActionsEl = document.getElementById("transferShareActions");
+const copyTransferIdBtnEl = document.getElementById("copyTransferIdBtn");
+const copyTransferRecipientBtnEl = document.getElementById("copyTransferRecipientBtn");
+const copyTransferLinkBtnEl = document.getElementById("copyTransferLinkBtn");
+const shareTransferLinkBtnEl = document.getElementById("shareTransferLinkBtn");
+const transferNoteEditorEl = document.getElementById("transferNoteEditor");
+const transferNoteInputEl = document.getElementById("transferNoteInput");
+const saveTransferNoteBtnEl = document.getElementById("saveTransferNoteBtn");
+const transferNoteFeedbackEl = document.getElementById("transferNoteFeedback");
+const eventsListEl       = document.getElementById("eventsList");
+const eventSummaryChipsEl = document.getElementById("eventSummaryChips");
+const eventVisibleCountEl = document.getElementById("eventVisibleCount");
+const eventFailedCountEl = document.getElementById("eventFailedCount");
+const eventTypeFilterEl   = document.getElementById("eventTypeFilter");
+const eventStatusFilterEl = document.getElementById("eventStatusFilter");
+const eventDateFromEl     = document.getElementById("eventDateFrom");
+const eventDateToEl       = document.getElementById("eventDateTo");
+const eventActiveFiltersEl = document.getElementById("eventActiveFilters");
+const eventSearchFilterEl = document.getElementById("eventSearchFilter");
+const applyEventFiltersBtnEl = document.getElementById("applyEventFiltersBtn");
+const clearEventFiltersBtnEl = document.getElementById("clearEventFiltersBtn");
+const eventPresetSelectEl = document.getElementById("eventPresetSelect");
+const saveEventPresetBtnEl = document.getElementById("saveEventPresetBtn");
+const applyEventPresetBtnEl = document.getElementById("applyEventPresetBtn");
+const deleteEventPresetBtnEl = document.getElementById("deleteEventPresetBtn");
+const eventShortcutFailuresBtnEl = document.getElementById("eventShortcutFailures");
+const eventShortcutSettlementBtnEl = document.getElementById("eventShortcutSettlement");
+const eventShortcutLast24hBtnEl = document.getElementById("eventShortcutLast24h");
+const eventShortcutLast7dBtnEl = document.getElementById("eventShortcutLast7d");
+const eventShortcutLast30dBtnEl = document.getElementById("eventShortcutLast30d");
+const eventDensityComfortableBtnEl = document.getElementById("eventDensityComfortableBtn");
+const eventDensityCompactBtnEl = document.getElementById("eventDensityCompactBtn");
+const eventSortOldestBtnEl = document.getElementById("eventSortOldestBtn");
+const eventSortNewestBtnEl = document.getElementById("eventSortNewestBtn");
+const eventExpandPrevBtnEl = document.getElementById("eventExpandPrevBtn");
+const eventExpandNextBtnEl = document.getElementById("eventExpandNextBtn");
+const eventFailurePrevBtnEl = document.getElementById("eventFailurePrevBtn");
+const eventFailureNextBtnEl = document.getElementById("eventFailureNextBtn");
+const eventFailedOnlyToggleBtnEl = document.getElementById("eventFailedOnlyToggleBtn");
+const eventAutoApplyBtnEl = document.getElementById("eventAutoApplyBtn");
+const copyEventFiltersBtnEl = document.getElementById("copyEventFiltersBtn");
+const exportEventsCsvBtnEl = document.getElementById("exportEventsCsvBtn");
+const exportEventsJsonBtnEl = document.getElementById("exportEventsJsonBtn");
+const copyEventsDigestBtnEl = document.getElementById("copyEventsDigestBtn");
+const copyFailedEventsDigestBtnEl = document.getElementById("copyFailedEventsDigestBtn");
 
 const refreshListBtn    = document.getElementById("refreshListBtn");
 const applyFiltersBtn   = document.getElementById("applyFiltersBtn");
+const filterSearchEl    = document.getElementById("filterSearch");
+const filterDateFromEl  = document.getElementById("filterDateFrom");
+const filterDateToEl    = document.getElementById("filterDateTo");
 const reloadDetailsBtn  = document.getElementById("reloadDetailsBtn");
 const cancelTransferBtn = document.getElementById("cancelTransferBtn");
 
@@ -80,7 +157,14 @@ const recipientPhoneEl  = document.getElementById("recipientPhone");
 const aliasHintEl       = document.getElementById("aliasHint");
 
 const SESSION_KEY       = "ebank.client.user";
+const TRANSFER_PRESETS_KEY = "ebank.client.transfer-presets";
+const EVENT_PRESETS_KEY = "ebank.client.event-presets";
+const EVENT_FILTERS_KEY = "ebank.client.event-filters";
+const EVENT_DENSITY_KEY = "ebank.client.event-density";
+const EVENT_SORT_KEY = "ebank.client.event-sort";
+const EVENT_AUTO_APPLY_KEY = "ebank.client.event-auto-apply";
 const POLL_INTERVAL_MS  = 5_000;
+const EVENTS_PAGE_SIZE  = 25;
 const TERMINAL_STATUSES = new Set(["SETTLED", "FAILED"]);
 
 // ── App state ─────────────────────────────────────────
@@ -93,8 +177,26 @@ const state = {
   pollTimer: null,
   kycStatus: null,
   nextCursor: null,
+  currentTransfer: null,
+  transferEvents: [],
+  eventNextCursor: null,
+  loadingMoreEvents: false,
+  savingTransferNote: false,
+  transferFilterPresets: [],
+  eventFilterPresets: [],
   phoneLinkVerificationId: null,
   phoneLinkPhone: null,
+  eventFilters: {
+    eventType: "",
+    toStatus: "",
+    createdAtFrom: "",
+    createdAtTo: "",
+    searchText: "",
+  },
+  eventDensity: "comfortable",
+  eventSortOrder: "oldest",
+  eventAutoApply: false,
+  expandedEventId: null,
 };
 
 // ── Currency helpers ─────────────────────────────────
@@ -158,7 +260,17 @@ function statusBadge(status) {
 
 // ── Toast ────────────────────────────────────────────
 let toastTimer = null;
+let eventAutoApplyTimer = null;
 
+function clearEventAutoApplyTimer() {
+  if (eventAutoApplyTimer !== null) {
+    clearTimeout(eventAutoApplyTimer);
+    eventAutoApplyTimer = null;
+  }
+}
+
+window.addEventListener("pagehide", clearEventAutoApplyTimer);
+window.addEventListener("beforeunload", clearEventAutoApplyTimer);
 function showToast(message, isError = false) {
   clearTimeout(toastTimer);
   toastEl.textContent = message;
@@ -168,7 +280,6 @@ function showToast(message, isError = false) {
   toastEl.classList.add("show");
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), 3500);
 }
-
 // ── Feedback (form-level, stays visible) ─────────────
 function setFeedback(message, kind = "") {
   formFeedback.textContent = message || "";
@@ -177,8 +288,529 @@ function setFeedback(message, kind = "") {
 
 // ── Gateway status pill ──────────────────────────────
 function setGatewayStatus(text, isHealthy = false) {
+  if (!gatewayStatusEl) return;
   gatewayStatusEl.textContent = `${text} (${getApiBase()})`;
   gatewayStatusEl.style.color = isHealthy ? "#0b7e5a" : "#6b3a10";
+}
+
+function syncExportButton() {
+  if (!exportTransfersBtnEl) return;
+  exportTransfersBtnEl.disabled = state.loadingList || state.transfers.length === 0;
+}
+
+function syncEventDensityButtons() {
+  if (!eventDensityComfortableBtnEl || !eventDensityCompactBtnEl) return;
+
+  const isCompact = state.eventDensity === "compact";
+  eventDensityComfortableBtnEl.classList.toggle("active", !isCompact);
+  eventDensityCompactBtnEl.classList.toggle("active", isCompact);
+  eventDensityComfortableBtnEl.setAttribute("aria-pressed", String(!isCompact));
+  eventDensityCompactBtnEl.setAttribute("aria-pressed", String(isCompact));
+}
+
+function syncEventSortButtons() {
+  if (!eventSortOldestBtnEl || !eventSortNewestBtnEl) return;
+
+  const newestFirst = state.eventSortOrder === "newest";
+  eventSortOldestBtnEl.classList.toggle("active", !newestFirst);
+  eventSortNewestBtnEl.classList.toggle("active", newestFirst);
+  eventSortOldestBtnEl.setAttribute("aria-pressed", String(!newestFirst));
+  eventSortNewestBtnEl.setAttribute("aria-pressed", String(newestFirst));
+}
+
+function getFilteredTransferEvents(events = state.transferEvents) {
+  return filterEventsBySearch(events || [], state.eventFilters.searchText);
+}
+
+function getVisibleTransferEvents(events = state.transferEvents) {
+  const filteredEvents = getFilteredTransferEvents(events);
+  const sortedEvents = [...filteredEvents].sort((left, right) => {
+    const leftTime = new Date(left.created_at || 0).getTime();
+    const rightTime = new Date(right.created_at || 0).getTime();
+    if (leftTime === rightTime) {
+      const leftId = String(left.event_id || "");
+      const rightId = String(right.event_id || "");
+      return leftId.localeCompare(rightId);
+    }
+    return leftTime - rightTime;
+  });
+
+  return state.eventSortOrder === "newest" ? sortedEvents.reverse() : sortedEvents;
+}
+
+function syncEventExportButtons() {
+  if (!exportEventsCsvBtnEl || !exportEventsJsonBtnEl) return;
+  const visibleEvents = getVisibleTransferEvents();
+  const hasEvents = visibleEvents.length > 0;
+  const hasFailureEvents = visibleEvents.some((event) => isFailureEvent(event));
+  const disabled = !state.selectedTransferId || !hasEvents;
+  exportEventsCsvBtnEl.disabled = disabled;
+  exportEventsJsonBtnEl.disabled = disabled;
+  if (copyEventsDigestBtnEl) copyEventsDigestBtnEl.disabled = disabled;
+  if (copyFailedEventsDigestBtnEl) copyFailedEventsDigestBtnEl.disabled = !state.selectedTransferId || !hasFailureEvents;
+}
+
+function syncEventRowNavigationButtons() {
+  const visibleEvents = getVisibleTransferEvents();
+  const visibleEventIds = visibleEvents.map((event) => String(event.event_id || "")).filter(Boolean);
+  const failedVisibleEventIds = visibleEvents
+    .filter((event) => String(event.to_status || "").toUpperCase() === "FAILED" || String(event.event_type || "").toUpperCase().includes("FAILED") || Boolean(event.failure_reason))
+    .map((event) => String(event.event_id || ""))
+    .filter(Boolean);
+  const disabled = !state.selectedTransferId || visibleEventIds.length === 0;
+  const failedDisabled = !state.selectedTransferId || failedVisibleEventIds.length === 0;
+  if (eventExpandPrevBtnEl) eventExpandPrevBtnEl.disabled = disabled;
+  if (eventExpandNextBtnEl) eventExpandNextBtnEl.disabled = disabled;
+  if (eventFailurePrevBtnEl) eventFailurePrevBtnEl.disabled = failedDisabled;
+  if (eventFailureNextBtnEl) eventFailureNextBtnEl.disabled = failedDisabled;
+}
+
+function renderEventVisibleCount(visibleCount, totalCount) {
+  if (!eventVisibleCountEl) return;
+  if (!totalCount) {
+    eventVisibleCountEl.textContent = "0 shown";
+    return;
+  }
+  eventVisibleCountEl.textContent = `${visibleCount} shown of ${totalCount}`;
+}
+
+function renderFailedVisibleCount(failedVisibleCount, totalVisibleCount) {
+  if (!eventFailedCountEl) return;
+  if (!totalVisibleCount) {
+    eventFailedCountEl.textContent = "0 failed";
+    return;
+  }
+  eventFailedCountEl.textContent = `${failedVisibleCount} failed shown`;
+}
+
+function applyEventDensity(density) {
+  state.eventDensity = density === "compact" ? "compact" : "comfortable";
+  eventsListEl.classList.toggle("events-compact", state.eventDensity === "compact");
+  window.localStorage.setItem(EVENT_DENSITY_KEY, state.eventDensity);
+  syncEventDensityButtons();
+}
+
+function applyEventSortOrder(order) {
+  state.eventSortOrder = order === "newest" ? "newest" : "oldest";
+  window.localStorage.setItem(EVENT_SORT_KEY, state.eventSortOrder);
+  syncEventSortButtons();
+}
+
+function setTransferNoteFeedback(message, kind = "") {
+  if (!transferNoteFeedbackEl) return;
+  transferNoteFeedbackEl.textContent = message || "";
+  transferNoteFeedbackEl.className = `feedback ${kind}`.trim();
+}
+
+function toStartOfDay(dateValue) {
+  return dateValue ? `${dateValue}T00:00:00Z` : "";
+}
+
+function toEndOfDay(dateValue) {
+  return dateValue ? `${dateValue}T23:59:59Z` : "";
+}
+
+function readStoredPresets(storageKey) {
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((preset) => preset && typeof preset.name === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredPresets(storageKey, presets) {
+  window.localStorage.setItem(storageKey, JSON.stringify(presets));
+}
+
+function renderPresetSelect(selectEl, presets, placeholder) {
+  if (!selectEl) return;
+  const previousValue = selectEl.value;
+  selectEl.innerHTML = "";
+  const placeholderOption = document.createElement("option");
+  placeholderOption.value = "";
+  placeholderOption.textContent = placeholder;
+  selectEl.appendChild(placeholderOption);
+
+  for (const preset of presets) {
+    const option = document.createElement("option");
+    option.value = preset.name;
+    option.textContent = preset.name;
+    selectEl.appendChild(option);
+  }
+
+  selectEl.value = presets.some((preset) => preset.name === previousValue) ? previousValue : "";
+}
+
+function renderTransferPresetOptions() {
+  renderPresetSelect(transferPresetSelectEl, state.transferFilterPresets, "Saved transfer presets");
+}
+
+function renderEventPresetOptions() {
+  renderPresetSelect(eventPresetSelectEl, state.eventFilterPresets, "Saved event presets");
+}
+
+function getCurrentTransferFilters() {
+  return {
+    senderUserId: filterSenderEl.value.trim(),
+    status: filterStatusEl.value,
+    q: filterSearchEl ? filterSearchEl.value.trim() : "",
+    createdAtFrom: filterDateFromEl ? filterDateFromEl.value : "",
+    createdAtTo: filterDateToEl ? filterDateToEl.value : "",
+  };
+}
+
+function applyTransferFilterValues(filters) {
+  filterSenderEl.value = filters.senderUserId || state.signedInUserId || "";
+  filterStatusEl.value = filters.status || "";
+  if (filterSearchEl) filterSearchEl.value = filters.q || "";
+  if (filterDateFromEl) filterDateFromEl.value = filters.createdAtFrom || "";
+  if (filterDateToEl) filterDateToEl.value = filters.createdAtTo || "";
+}
+
+function getCurrentEventFilters() {
+  return {
+    eventType: eventTypeFilterEl.value,
+    toStatus: eventStatusFilterEl.value,
+    searchText: eventSearchFilterEl ? eventSearchFilterEl.value.trim() : "",
+    createdAtFrom: eventDateFromEl ? eventDateFromEl.value : "",
+    createdAtTo: eventDateToEl ? eventDateToEl.value : "",
+  };
+}
+
+function applyEventFilterValues(filters) {
+  eventTypeFilterEl.value = filters.eventType || "";
+  eventStatusFilterEl.value = filters.toStatus || "";
+  if (eventSearchFilterEl) eventSearchFilterEl.value = filters.searchText || "";
+  if (eventDateFromEl) eventDateFromEl.value = filters.createdAtFrom || "";
+  if (eventDateToEl) eventDateToEl.value = filters.createdAtTo || "";
+  renderActiveEventFilterChips();
+  syncEventQuickActionButtons();
+}
+
+function syncEventQuickActionButtons() {
+  if (eventFailedOnlyToggleBtnEl) {
+    const failedOnly = isFailedOnlyEnabled(state.eventFilters);
+    eventFailedOnlyToggleBtnEl.classList.toggle("active", failedOnly);
+    eventFailedOnlyToggleBtnEl.setAttribute("aria-pressed", String(failedOnly));
+  }
+
+  if (eventAutoApplyBtnEl) {
+    eventAutoApplyBtnEl.classList.toggle("active", state.eventAutoApply);
+    eventAutoApplyBtnEl.setAttribute("aria-pressed", String(state.eventAutoApply));
+    eventAutoApplyBtnEl.textContent = `Auto apply: ${state.eventAutoApply ? "On" : "Off"}`;
+  }
+}
+
+function applyEventAutoApply(enabled) {
+  state.eventAutoApply = Boolean(enabled);
+  window.localStorage.setItem(EVENT_AUTO_APPLY_KEY, state.eventAutoApply ? "true" : "false");
+  syncEventQuickActionButtons();
+}
+
+function scheduleAutoApplyEventFilters() {
+  if (!state.eventAutoApply) return;
+  clearTimeout(eventAutoApplyTimer);
+  eventAutoApplyTimer = setTimeout(() => {
+    applyEventFilters(getCurrentEventFilters());
+  }, 240);
+}
+
+function clearAllEventFilters() {
+  applyEventFilters({ eventType: "", toStatus: "", createdAtFrom: "", createdAtTo: "", searchText: "" });
+}
+
+function renderActiveEventFilterChips() {
+  if (!eventActiveFiltersEl) return;
+  eventActiveFiltersEl.innerHTML = "";
+  const chips = buildActiveEventFilterChips(state.eventFilters);
+  eventActiveFiltersEl.classList.toggle("hidden", chips.length === 0);
+
+  for (const chip of chips) {
+    const chipButton = document.createElement("button");
+    chipButton.type = "button";
+    chipButton.className = "event-active-filter-chip";
+    chipButton.textContent = `${chip.label}: ${chip.value} x`;
+    chipButton.title = `Remove ${chip.label} filter`;
+    chipButton.addEventListener("click", () => {
+      applyEventFilters({
+        ...state.eventFilters,
+        [chip.key]: "",
+      });
+    });
+    eventActiveFiltersEl.appendChild(chipButton);
+  }
+
+  if (chips.length > 1) {
+    const clearAllButton = document.createElement("button");
+    clearAllButton.type = "button";
+    clearAllButton.className = "event-active-filter-chip event-active-filter-chip-clear";
+    clearAllButton.textContent = "Clear all x";
+    clearAllButton.title = "Clear all event filters";
+    clearAllButton.addEventListener("click", () => {
+      clearAllEventFilters();
+    });
+    eventActiveFiltersEl.appendChild(clearAllButton);
+  }
+}
+
+async function copyTextToClipboard(value) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = value;
+  textArea.setAttribute("readonly", "true");
+  textArea.style.position = "absolute";
+  textArea.style.left = "-9999px";
+  document.body.appendChild(textArea);
+  textArea.select();
+  document.execCommand("copy");
+  textArea.remove();
+}
+
+async function copyTransferValue(kind) {
+  if (!state.currentTransfer) return;
+
+  const payload = buildTransferDetailActionPayload(state.currentTransfer, window.location.href);
+  const values = {
+    transfer_id: { value: payload.transferIdText, message: "Transfer ID copied." },
+    recipient: { value: payload.recipientText, message: "Recipient copied." },
+    link: { value: payload.shareUrl, message: "Transfer link copied." },
+  };
+
+  try {
+    await copyTextToClipboard(values[kind].value);
+    showToast(values[kind].message);
+  } catch {
+    showToast("Copy failed.", true);
+  }
+}
+
+async function shareSelectedTransferLink() {
+  if (!state.currentTransfer) return;
+  const payload = buildTransferDetailActionPayload(state.currentTransfer, window.location.href);
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: payload.shareTitle,
+        text: payload.shareText,
+        url: payload.shareUrl,
+      });
+      return;
+    } catch {
+      // Fall back to copying the link.
+    }
+  }
+
+  await copyTransferValue("link");
+}
+
+function applySelectedPresetShortcut() {
+  if (state.selectedTransferId && eventPresetSelectEl?.value) {
+    applyPreset("event");
+    return;
+  }
+  if (transferPresetSelectEl?.value) {
+    applyPreset("transfer");
+  }
+}
+
+function getTodayDateValue() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function resetSelectedTransferView() {
+  state.selectedTransferId = null;
+  state.currentTransfer = null;
+  history.replaceState(null, "", buildDeepLinkUrl(window.location.href, null));
+  stopPolling();
+  renderTransferDetails(null);
+}
+
+async function savePreset(kind) {
+  const name = window.prompt(`Save ${kind} preset as:`);
+  if (name == null) return;
+
+  const nextPreset = {
+    name,
+    filters: kind === "transfer" ? getCurrentTransferFilters() : getCurrentEventFilters(),
+  };
+
+  try {
+    if (kind === "transfer") {
+      state.transferFilterPresets = upsertFilterPreset(state.transferFilterPresets, nextPreset);
+      writeStoredPresets(TRANSFER_PRESETS_KEY, state.transferFilterPresets);
+      renderTransferPresetOptions();
+      transferPresetSelectEl.value = state.transferFilterPresets.find((preset) => preset.name.toLowerCase() === String(name).trim().toLowerCase())?.name || "";
+    } else {
+      state.eventFilterPresets = upsertFilterPreset(state.eventFilterPresets, nextPreset);
+      writeStoredPresets(EVENT_PRESETS_KEY, state.eventFilterPresets);
+      renderEventPresetOptions();
+      eventPresetSelectEl.value = state.eventFilterPresets.find((preset) => preset.name.toLowerCase() === String(name).trim().toLowerCase())?.name || "";
+    }
+    showToast(`Preset saved.`);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+function deletePreset(kind) {
+  const selectEl = kind === "transfer" ? transferPresetSelectEl : eventPresetSelectEl;
+  const presetName = selectEl.value;
+  if (!presetName) return;
+
+  if (kind === "transfer") {
+    state.transferFilterPresets = removeFilterPreset(state.transferFilterPresets, presetName);
+    writeStoredPresets(TRANSFER_PRESETS_KEY, state.transferFilterPresets);
+    renderTransferPresetOptions();
+  } else {
+    state.eventFilterPresets = removeFilterPreset(state.eventFilterPresets, presetName);
+    writeStoredPresets(EVENT_PRESETS_KEY, state.eventFilterPresets);
+    renderEventPresetOptions();
+  }
+  showToast("Preset deleted.");
+}
+
+function applyEventFilters(nextFilters) {
+  const normalizedFilters = {
+    eventType: nextFilters.eventType || "",
+    toStatus: nextFilters.toStatus || "",
+    createdAtFrom: nextFilters.createdAtFrom || "",
+    createdAtTo: nextFilters.createdAtTo || "",
+    searchText: (nextFilters.searchText || "").trim(),
+  };
+  if (didEventFiltersChange(state.eventFilters, normalizedFilters)) {
+    resetEventFeed();
+  }
+  state.eventFilters = normalizedFilters;
+  writeStoredEventFilters(EVENT_FILTERS_KEY, normalizedFilters);
+  history.replaceState(null, "", buildUrlWithEventFilters(window.location.href, normalizedFilters));
+  applyEventFilterValues(normalizedFilters);
+  void loadTransferDetails();
+}
+
+function applyPreset(kind) {
+  const selectEl = kind === "transfer" ? transferPresetSelectEl : eventPresetSelectEl;
+  const presetName = selectEl.value;
+  if (!presetName) return;
+
+  const preset = kind === "transfer"
+    ? findFilterPreset(state.transferFilterPresets, presetName)
+    : findFilterPreset(state.eventFilterPresets, presetName);
+  if (!preset) return;
+
+  if (kind === "transfer") {
+    applyTransferFilterValues(preset.filters);
+    state.nextCursor = null;
+    resetSelectedTransferView();
+    void loadTransfers();
+  } else {
+    applyEventFilters({
+      eventType: preset.filters.eventType || "",
+      toStatus: preset.filters.toStatus || "",
+      createdAtFrom: preset.filters.createdAtFrom || "",
+      createdAtTo: preset.filters.createdAtTo || "",
+      searchText: preset.filters.searchText || "",
+    });
+  }
+}
+
+function applyTransferShortcut(shortcutName) {
+  if (shortcutName === "failed-review") {
+    applyTransferFilterValues({
+      senderUserId: state.signedInUserId || "",
+      status: "FAILED",
+      q: "fail",
+      createdAtFrom: "",
+      createdAtTo: "",
+    });
+  } else if (shortcutName === "has-note") {
+    applyTransferFilterValues({
+      senderUserId: state.signedInUserId || "",
+      status: "",
+      q: "refund",
+      createdAtFrom: "",
+      createdAtTo: "",
+    });
+  } else if (shortcutName === "today") {
+    const today = getTodayDateValue();
+    applyTransferFilterValues({
+      senderUserId: state.signedInUserId || "",
+      status: "",
+      q: "",
+      createdAtFrom: today,
+      createdAtTo: today,
+    });
+  }
+
+  state.nextCursor = null;
+  resetSelectedTransferView();
+  void loadTransfers();
+}
+
+function applyEventShortcut(shortcutName) {
+  if (shortcutName === "failures") {
+    applyEventFilters({
+      eventType: "",
+      toStatus: "FAILED",
+      createdAtFrom: "",
+      createdAtTo: "",
+      searchText: "fail",
+    });
+  } else if (shortcutName === "settlement") {
+    applyEventFilters({
+      eventType: "TRANSFER_STATUS_TRANSITIONED",
+      toStatus: "SETTLED",
+      createdAtFrom: "",
+      createdAtTo: "",
+      searchText: "settled",
+    });
+  }
+}
+
+function applyEventDateShortcut(shortcutName) {
+  let nextRange = { fromDate: "", toDate: "" };
+  if (shortcutName === "last-24h") {
+    nextRange = buildRollingDateRange({ hours: 24 });
+  } else if (shortcutName === "last-7d") {
+    nextRange = buildRollingDateRange({ days: 7 });
+  } else if (shortcutName === "last-30d") {
+    nextRange = buildRollingDateRange({ days: 30 });
+  }
+
+  const currentFilters = getCurrentEventFilters();
+  applyEventFilters({
+    ...currentFilters,
+    createdAtFrom: nextRange.fromDate,
+    createdAtTo: nextRange.toDate,
+  });
+}
+
+function toggleFailedOnlyEvents() {
+  applyEventFilters(toggleFailedOnlyStatus(state.eventFilters));
+}
+
+function syncEventLoadMore() {
+  if (!eventLoadMoreRowEl || !eventLoadMoreBtnEl) return;
+  eventLoadMoreRowEl.classList.toggle("hidden", !state.eventNextCursor);
+  eventLoadMoreBtnEl.disabled = state.loadingMoreEvents;
+}
+
+function resetEventFeed() {
+  state.transferEvents = [];
+  state.eventNextCursor = null;
+  state.loadingMoreEvents = false;
+  state.expandedEventId = null;
+  renderEvents([]);
+  renderEventSummary(null);
+  renderEventVisibleCount(0, 0);
+  syncEventLoadMore();
+  syncEventExportButtons();
 }
 
 // ── Detail auto-poll ─────────────────────────────────
@@ -234,18 +866,6 @@ async function loadKycStatus() {
   }
 }
 
-// ── Auth tabs ───────────────────────────────────────
-function switchTab(tab) {
-  const isSignIn = tab === "signin";
-  tabSignIn.classList.toggle("active", isSignIn);
-  tabRegister.classList.toggle("active", !isSignIn);
-  panelSignIn.classList.toggle("hidden", !isSignIn);
-  panelRegister.classList.toggle("hidden", isSignIn);
-}
-
-tabSignIn.addEventListener("click", () => switchTab("signin"));
-tabRegister.addEventListener("click", () => switchTab("register"));
-
 // ── Alias hint ──────────────────────────────────────
 let aliasDebounce = null;
 
@@ -299,6 +919,7 @@ function applyAuthState() {
     state.transfers = [];
     state.selectedTransferId = null;
     state.nextCursor = null;
+    resetEventFeed();
     state.phoneLinkVerificationId = null;
     state.phoneLinkPhone = null;
     // Reset phone link panel to step 1
@@ -309,7 +930,6 @@ function applyAuthState() {
     stopPolling();
     renderTransferList();
     renderTransferDetails(null);
-    renderEvents([]);
     setSummaryStats();
   }
 }
@@ -321,8 +941,21 @@ function setSignedInUser(userId) {
   } else {
     window.localStorage.removeItem(SESSION_KEY);
     state.kycStatus = null;
+    state.currentTransfer = null;
+    state.transferEvents = [];
+    state.eventNextCursor = null;
+    state.loadingMoreEvents = false;
+    state.eventFilters = { eventType: "", toStatus: "", createdAtFrom: "", createdAtTo: "", searchText: "" };
     if (statsKycEl) statsKycEl.textContent = "-";
     if (kycActionEl) kycActionEl.classList.add("hidden");
+    if (eventTypeFilterEl) eventTypeFilterEl.value = "";
+    if (eventStatusFilterEl) eventStatusFilterEl.value = "";
+    if (eventDateFromEl) eventDateFromEl.value = "";
+    if (eventDateToEl) eventDateToEl.value = "";
+    if (eventSearchFilterEl) eventSearchFilterEl.value = "";
+    if (filterSearchEl) filterSearchEl.value = "";
+    if (filterDateFromEl) filterDateFromEl.value = "";
+    if (filterDateToEl) filterDateToEl.value = "";
   }
   applyAuthState();
 }
@@ -355,9 +988,10 @@ function skeletonCards(count = 3) {
 // ── Render: transfer list ────────────────────────────
 function renderTransferList() {
   transferListEl.innerHTML = "";
+  syncExportButton();
 
   if (!state.transfers.length) {
-    transferListEl.innerHTML = `<div class="empty">No transfers found.</div>`;
+    transferListEl.innerHTML = `<div class="empty">${buildTransferEmptyStateMessage(Boolean(filterSenderEl.value || filterStatusEl.value || filterSearchEl?.value || filterDateFromEl?.value || filterDateToEl?.value))}</div>`;
     return;
   }
 
@@ -365,6 +999,11 @@ function renderTransferList() {
     const card = document.createElement("article");
     card.className = "transfer-card";
     if (transfer.transfer_id === state.selectedTransferId) card.classList.add("active");
+
+    const searchContexts = buildTransferSearchContext(transfer, filterSearchEl?.value || "");
+    const contextMarkup = searchContexts
+      .map((context) => `<div class="transfer-match"><span>${context.label}</span>${context.html}</div>`)
+      .join("");
 
     card.innerHTML = `
       <div class="transfer-meta">
@@ -376,11 +1015,13 @@ function renderTransferList() {
         <span>${new Date(transfer.created_at).toLocaleDateString()}</span>
       </div>
       ${transfer.note ? `<div class="transfer-note"><span>${transfer.note}</span></div>` : ""}
+      ${contextMarkup}
       <div class="transfer-id">${transfer.transfer_id}</div>
     `;
 
     card.addEventListener("click", () => {
       state.selectedTransferId = transfer.transfer_id;
+      history.replaceState(null, "", buildDeepLinkUrl(window.location.href, transfer.transfer_id));
       renderTransferList();
       void loadTransferDetails(transfer.transfer_id);
       startPolling(transfer.transfer_id);
@@ -393,13 +1034,20 @@ function renderTransferList() {
 // ── Render: detail ────────────────────────────────────
 function renderTransferDetails(transfer) {
   if (!transfer) {
+    state.currentTransfer = null;
     transferDetailsEl.className = "details-empty";
     transferDetailsEl.textContent = "Select a transfer to view details.";
     cancelTransferBtn.disabled = true;
+    if (transferShareActionsEl) transferShareActionsEl.classList.add("hidden");
+    if (transferNoteEditorEl) transferNoteEditorEl.classList.add("hidden");
+    if (transferNoteInputEl) transferNoteInputEl.value = "";
+    setTransferNoteFeedback("");
+    resetEventFeed();
     return;
   }
 
   const cancellable = transfer.status === "CREATED" || transfer.status === "VALIDATED";
+  state.currentTransfer = transfer;
   cancelTransferBtn.disabled = !cancellable;
 
   transferDetailsEl.className = "details-grid";
@@ -415,29 +1063,151 @@ function renderTransferDetails(transfer) {
     <div><span>External Ref</span>${transfer.connector_external_ref || "-"}</div>
     <div><span>Failure Reason</span>${transfer.failure_reason || "-"}</div>
   `;
+
+  if (transferShareActionsEl) transferShareActionsEl.classList.remove("hidden");
+  if (transferNoteEditorEl) transferNoteEditorEl.classList.remove("hidden");
+  if (transferNoteInputEl) transferNoteInputEl.value = transfer.note || "";
+  if (saveTransferNoteBtnEl) saveTransferNoteBtnEl.disabled = state.savingTransferNote;
+  setTransferNoteFeedback("");
 }
 
 // ── Render: events ────────────────────────────────────
 function renderEvents(events) {
   eventsListEl.innerHTML = "";
+  eventsListEl.classList.toggle("events-compact", state.eventDensity === "compact");
+  syncEventDensityButtons();
 
-  if (!events || !events.length) {
-    eventsListEl.innerHTML = `<li class="empty">No events yet.</li>`;
+  const filteredEvents = getVisibleTransferEvents(events);
+  const visibleEventIds = filteredEvents.map((event) => String(event.event_id || "")).filter(Boolean);
+  if (state.expandedEventId && !visibleEventIds.includes(String(state.expandedEventId))) {
+    state.expandedEventId = null;
+  }
+  syncEventExportButtons();
+  syncEventRowNavigationButtons();
+  renderEventVisibleCount(filteredEvents.length, (events || []).length);
+  renderFailedVisibleCount(getFailureEvents(filteredEvents).length, filteredEvents.length);
+
+  if (!filteredEvents.length) {
+    const hasFilters = Boolean(
+      state.eventFilters.eventType ||
+      state.eventFilters.toStatus ||
+      state.eventFilters.createdAtFrom ||
+      state.eventFilters.createdAtTo ||
+      state.eventFilters.searchText
+    );
+    eventsListEl.innerHTML = `<li class="empty">${buildEventEmptyStateMessage(hasFilters)}</li>`;
     return;
   }
 
-  for (const event of events) {
+  const timelineRows = buildTimelineRows(filteredEvents);
+  for (const row of timelineRows) {
+    if (row.kind === "day") {
+      const dayBreak = document.createElement("li");
+      dayBreak.className = "events-day-break";
+      dayBreak.textContent = row.dayKey;
+      eventsListEl.appendChild(dayBreak);
+      continue;
+    }
+
+    const event = row.event;
     const item = document.createElement("li");
+    item.dataset.eventId = event.event_id || "";
+    const isExpanded = state.expandedEventId === event.event_id;
+    if (isExpanded) item.classList.add("event-row-expanded");
     const transition =
       event.from_status && event.to_status
         ? `${statusBadge(event.from_status)} &rarr; ${statusBadge(event.to_status)}`
         : event.event_type;
     item.innerHTML = `
-      ${transition}
-      <small>${formatDateTime(event.created_at)}</small>
-      ${event.failure_reason ? `<small style="color:#b72d2d">${event.failure_reason}</small>` : ""}
+      <div class="event-row-summary">
+        <span class="event-row-summary-content">
+          ${transition}
+          <small>${event.event_type}</small>
+          <small>${formatDateTime(event.created_at)}</small>
+          ${event.failure_reason ? `<small style="color:#b72d2d">${event.failure_reason}</small>` : ""}
+        </span>
+        <button class="event-row-copy-btn" title="Copy event" aria-label="Copy event">&#x2398;</button>
+      </div>
+      ${isExpanded ? buildEventRowDetailHtml(event) : ""}
     `;
+    item.querySelector(".event-row-summary-content").addEventListener("click", () => {
+      state.expandedEventId = (state.expandedEventId === event.event_id) ? null : event.event_id;
+      renderEvents(state.transferEvents);
+    });
+    item.querySelector(".event-row-copy-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(buildEventRowCopyText(event)).catch(() => {});
+      showToast("Event copied");
+    });
     eventsListEl.appendChild(item);
+  }
+}
+
+function navigateExpandedEvent(direction) {
+  const visibleEventIds = getVisibleTransferEvents()
+    .map((event) => String(event.event_id || ""))
+    .filter(Boolean);
+  const nextEventId = getAdjacentEventId(visibleEventIds, state.expandedEventId, direction);
+  if (!nextEventId) {
+    showToast("No visible events to navigate.", true);
+    return;
+  }
+
+  state.expandedEventId = nextEventId;
+  renderEvents(state.transferEvents);
+
+  const rowEl = eventsListEl.querySelector(`li[data-event-id="${nextEventId}"]`);
+  if (rowEl) {
+    rowEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function navigateFailureEvent(direction) {
+  const visibleEvents = getVisibleTransferEvents();
+  const nextEventId = getAdjacentFailureEventId(visibleEvents, state.expandedEventId, direction);
+  if (!nextEventId) {
+    showToast("No failed events in current view.", true);
+    return;
+  }
+
+  state.expandedEventId = nextEventId;
+  renderEvents(state.transferEvents);
+
+  const rowEl = eventsListEl.querySelector(`li[data-event-id="${nextEventId}"]`);
+  if (rowEl) {
+    rowEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function renderEventSummary(summary) {
+  if (!eventSummaryChipsEl) return;
+  eventSummaryChipsEl.innerHTML = "";
+
+  if (!summary || !summary.total_events) {
+    eventSummaryChipsEl.innerHTML = '<span class="event-summary-chip">No events</span>';
+    return;
+  }
+
+  const chips = [];
+  chips.push(`Total ${summary.total_events}`);
+
+  const failedCount = summary.by_to_status?.FAILED || 0;
+  if (failedCount > 0) chips.push(`FAILED ${failedCount}`);
+
+  const settledCount = summary.by_to_status?.SETTLED || 0;
+  if (settledCount > 0) chips.push(`SETTLED ${settledCount}`);
+
+  const ledgerPostFail = summary.by_event_type?.TRANSFER_LEDGER_POSTING_FAILED || 0;
+  if (ledgerPostFail > 0) chips.push(`Ledger submit fail ${ledgerPostFail}`);
+
+  const ledgerRevFail = summary.by_event_type?.TRANSFER_LEDGER_REVERSAL_POSTING_FAILED || 0;
+  if (ledgerRevFail > 0) chips.push(`Ledger reversal fail ${ledgerRevFail}`);
+
+  for (const label of chips) {
+    const chip = document.createElement("span");
+    chip.className = "event-summary-chip";
+    chip.textContent = label;
+    eventSummaryChipsEl.appendChild(chip);
   }
 }
 
@@ -464,6 +1234,9 @@ async function loadTransfers(append = false) {
       status: filterStatusEl.value,
       limit: 20,
       cursor: append ? (state.nextCursor || "") : "",
+      q: filterSearchEl ? filterSearchEl.value.trim() : "",
+      createdAtFrom: filterDateFromEl ? toStartOfDay(filterDateFromEl.value) : "",
+      createdAtTo: filterDateToEl ? toEndOfDay(filterDateToEl.value) : "",
     });
 
     const incoming = data.transfers || [];
@@ -481,9 +1254,7 @@ async function loadTransfers(append = false) {
       state.selectedTransferId &&
       !state.transfers.some((t) => t.transfer_id === state.selectedTransferId)
     ) {
-      state.selectedTransferId = null;
-      stopPolling();
-      renderTransferDetails(null);
+      resetSelectedTransferView();
       renderEvents([]);
     }
 
@@ -496,6 +1267,7 @@ async function loadTransfers(append = false) {
     state.loadingList = false;
     refreshListBtn.disabled = false;
     applyFiltersBtn.disabled = false;
+    syncExportButton();
   }
 }
 
@@ -504,15 +1276,28 @@ async function loadTransferDetails(transferId = state.selectedTransferId) {
   state.loadingDetails = true;
   reloadDetailsBtn.disabled = true;
   cancelTransferBtn.disabled = true;
+  state.loadingMoreEvents = false;
+  syncEventLoadMore();
 
   try {
-    const [transfer, events] = await Promise.all([
+    const [transfer, eventsResult, summary] = await Promise.all([
       getTransfer(transferId),
-      getTransferEvents(transferId),
+      getTransferEvents(transferId, {
+        eventType: state.eventFilters.eventType,
+        toStatus: state.eventFilters.toStatus,
+        createdAtFrom: toStartOfDay(state.eventFilters.createdAtFrom),
+        createdAtTo: toEndOfDay(state.eventFilters.createdAtTo),
+        limit: EVENTS_PAGE_SIZE,
+      }),
+      getTransferEventSummary(transferId),
     ]);
 
     renderTransferDetails(transfer);
-    renderEvents(events);
+    state.transferEvents = eventsResult.events;
+    state.eventNextCursor = eventsResult.nextCursor;
+    renderEvents(state.transferEvents);
+    renderEventSummary(summary);
+    syncEventLoadMore();
 
     // Update the cached entry so summary stats stay current
     const idx = state.transfers.findIndex((t) => t.transfer_id === transferId);
@@ -526,10 +1311,182 @@ async function loadTransferDetails(transferId = state.selectedTransferId) {
   } catch (error) {
     transferDetailsEl.className = "details-empty";
     transferDetailsEl.textContent = error.message;
-    renderEvents([]);
+    resetEventFeed();
   } finally {
     state.loadingDetails = false;
     reloadDetailsBtn.disabled = false;
+  }
+}
+
+async function loadMoreEvents() {
+  if (!state.selectedTransferId || !state.eventNextCursor || state.loadingMoreEvents) return;
+  state.loadingMoreEvents = true;
+  syncEventLoadMore();
+
+  try {
+    const eventsResult = await getTransferEvents(state.selectedTransferId, {
+      eventType: state.eventFilters.eventType,
+      toStatus: state.eventFilters.toStatus,
+      createdAtFrom: toStartOfDay(state.eventFilters.createdAtFrom),
+      createdAtTo: toEndOfDay(state.eventFilters.createdAtTo),
+      limit: EVENTS_PAGE_SIZE,
+      cursor: state.eventNextCursor,
+    });
+    state.transferEvents = appendUniqueEvents(state.transferEvents, eventsResult.events);
+    state.eventNextCursor = eventsResult.nextCursor;
+    renderEvents(state.transferEvents);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    state.loadingMoreEvents = false;
+    syncEventLoadMore();
+  }
+}
+
+async function saveSelectedTransferNote() {
+  if (!state.selectedTransferId || !transferNoteInputEl || state.savingTransferNote) return;
+
+  state.savingTransferNote = true;
+  saveTransferNoteBtnEl.disabled = true;
+  setTransferNoteFeedback("");
+
+  try {
+    const updatedTransfer = await updateTransferNote(state.selectedTransferId, transferNoteInputEl.value);
+    const idx = state.transfers.findIndex((transfer) => transfer.transfer_id === updatedTransfer.transfer_id);
+    if (idx !== -1) {
+      state.transfers[idx] = updatedTransfer;
+      renderTransferList();
+      setSummaryStats();
+    }
+    state.currentTransfer = updatedTransfer;
+    renderTransferDetails(updatedTransfer);
+    showToast("Transfer note updated.");
+    setTransferNoteFeedback("Transfer note saved.", "success");
+  } catch (error) {
+    setTransferNoteFeedback(error.message, "error");
+    showToast(error.message, true);
+  } finally {
+    state.savingTransferNote = false;
+    saveTransferNoteBtnEl.disabled = false;
+  }
+}
+
+function downloadBlob(content, mimeType, filename) {
+  const blob = new Blob([content], { type: mimeType });
+  const blobUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(blobUrl);
+}
+
+function exportVisibleTransfersCsv() {
+  if (!state.transfers.length) {
+    showToast("No visible transfers to export.", true);
+    return;
+  }
+
+  const csv = buildTransfersCsv(state.transfers);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const blobUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = `transfers-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(blobUrl);
+}
+
+function exportFilteredTransferEvents(format) {
+  if (!state.selectedTransferId) {
+    showToast("Select a transfer before exporting events.", true);
+    return;
+  }
+
+  const filteredEvents = getVisibleTransferEvents();
+  if (!filteredEvents.length) {
+    showToast("No filtered events to export.", true);
+    return;
+  }
+
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  const filePrefix = `transfer-events-${state.selectedTransferId}-${dateStamp}`;
+
+  if (format === "csv") {
+    const csv = buildTransferEventsCsv(filteredEvents);
+    downloadBlob(csv, "text/csv;charset=utf-8", `${filePrefix}.csv`);
+    showToast("Filtered events exported as CSV.");
+    return;
+  }
+
+  const json = buildTransferEventsJson(filteredEvents, {
+    transferId: state.selectedTransferId,
+    generatedAt: new Date().toISOString(),
+    filters: { ...state.eventFilters },
+  });
+  downloadBlob(json, "application/json;charset=utf-8", `${filePrefix}.json`);
+  showToast("Filtered events exported as JSON.");
+}
+
+async function copyFilteredTransferEventsDigest() {
+  if (!state.selectedTransferId) {
+    showToast("Select a transfer before copying the digest.", true);
+    return;
+  }
+
+  const visibleEvents = getVisibleTransferEvents();
+  if (!visibleEvents.length) {
+    showToast("No filtered events to copy.", true);
+    return;
+  }
+
+  try {
+    const digest = buildTransferEventsDigest(visibleEvents, state.selectedTransferId);
+    await copyTextToClipboard(digest);
+    showToast("Filtered event digest copied.");
+  } catch {
+    showToast("Failed to copy event digest.", true);
+  }
+}
+
+async function copyFailedTransferEventsDigest() {
+  if (!state.selectedTransferId) {
+    showToast("Select a transfer before copying failed digest.", true);
+    return;
+  }
+
+  const visibleEvents = getVisibleTransferEvents();
+  const failedEvents = getFailureEvents(visibleEvents);
+  if (!failedEvents.length) {
+    showToast("No failed events to copy.", true);
+    return;
+  }
+
+  try {
+    const digest = buildFailedEventsDigest(visibleEvents, state.selectedTransferId);
+    await copyTextToClipboard(digest);
+    showToast("Failed-event digest copied.");
+  } catch {
+    showToast("Failed to copy failed-event digest.", true);
+  }
+}
+
+async function copyEventFiltersQuery() {
+  const query = buildEventFilterQueryString(state.eventFilters);
+  if (!query) {
+    showToast("No active event filters to copy.", true);
+    return;
+  }
+
+  try {
+    await copyTextToClipboard(`?${query}`);
+    showToast("Event filter query copied.");
+  } catch {
+    showToast("Failed to copy event filters.", true);
   }
 }
 
@@ -539,9 +1496,7 @@ authForm.addEventListener("submit", async (event) => {
   const userId = authUserIdEl.value.trim();
   if (!userId) return;
   setSignedInUser(userId);
-  state.selectedTransferId = null;
-  renderTransferDetails(null);
-  renderEvents([]);
+  resetSelectedTransferView();
   await Promise.allSettled([loadTransfers(), loadKycStatus()]);
 });
 
@@ -554,7 +1509,8 @@ registerForm.addEventListener("submit", async (event) => {
 
   const fullName    = String(document.getElementById("regFullName").value).trim();
   const countryCode = String(document.getElementById("regCountry").value).trim().toUpperCase();
-  const email       = String(document.getElementById("regEmail").value).trim();
+  const emailBase   = fullName.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "") || "user";
+  const email       = `${emailBase}.${Date.now()}@client.ebank.local`;
 
   try {
     const user = await createUser({ full_name: fullName, country_code: countryCode, email });
@@ -563,11 +1519,8 @@ registerForm.addEventListener("submit", async (event) => {
     showToast(`Welcome, ${fullName}! Your ID: ${user.user_id}`);
     // Auto sign in with new user
     authUserIdEl.value = user.user_id;
-    switchTab("signin");
     setSignedInUser(user.user_id);
-    state.selectedTransferId = null;
-    renderTransferDetails(null);
-    renderEvents([]);
+    resetSelectedTransferView();
     await Promise.allSettled([loadTransfers(), loadKycStatus()]);
   } catch (error) {
     registerFeedback.textContent = error.message;
@@ -579,6 +1532,7 @@ registerForm.addEventListener("submit", async (event) => {
 
 signOutBtn.addEventListener("click", () => {
   stopPolling();
+  history.replaceState(null, "", buildDeepLinkUrl(window.location.href, null));
   setSignedInUser(null);
 });
 
@@ -611,6 +1565,7 @@ transferForm.addEventListener("submit", async (event) => {
     showToast(`Transfer created — ${moneyLabel(transfer)} to ${recipient_phone_e164}`);
 
     state.selectedTransferId = transfer.transfer_id;
+    history.replaceState(null, "", buildDeepLinkUrl(window.location.href, transfer.transfer_id));
     await loadTransfers();
     await loadTransferDetails(transfer.transfer_id);
     startPolling(transfer.transfer_id);
@@ -625,15 +1580,147 @@ transferForm.addEventListener("submit", async (event) => {
 refreshListBtn.addEventListener("click", () => { void loadTransfers(); });
 
 applyFiltersBtn.addEventListener("click", () => {
-  state.selectedTransferId = null;
   state.nextCursor = null;
-  stopPolling();
-  renderTransferDetails(null);
-  renderEvents([]);
+  resetSelectedTransferView();
   void loadTransfers();
 });
 
+applyEventFiltersBtnEl.addEventListener("click", () => {
+  applyEventFilters({
+    eventType: eventTypeFilterEl.value,
+    toStatus: eventStatusFilterEl.value,
+    createdAtFrom: eventDateFromEl ? eventDateFromEl.value : "",
+    createdAtTo: eventDateToEl ? eventDateToEl.value : "",
+    searchText: eventSearchFilterEl ? eventSearchFilterEl.value.trim() : "",
+  });
+});
+
+clearEventFiltersBtnEl.addEventListener("click", () => {
+  clearAllEventFilters();
+});
+
 reloadDetailsBtn.addEventListener("click", () => { void loadTransferDetails(); });
+saveTransferNoteBtnEl.addEventListener("click", () => { void saveSelectedTransferNote(); });
+exportTransfersBtnEl.addEventListener("click", exportVisibleTransfersCsv);
+copyTransferIdBtnEl.addEventListener("click", () => { void copyTransferValue("transfer_id"); });
+copyTransferRecipientBtnEl.addEventListener("click", () => { void copyTransferValue("recipient"); });
+copyTransferLinkBtnEl.addEventListener("click", () => { void copyTransferValue("link"); });
+shareTransferLinkBtnEl.addEventListener("click", () => { void shareSelectedTransferLink(); });
+saveTransferPresetBtnEl.addEventListener("click", () => { void savePreset("transfer"); });
+applyTransferPresetBtnEl.addEventListener("click", () => { applyPreset("transfer"); });
+deleteTransferPresetBtnEl.addEventListener("click", () => { deletePreset("transfer"); });
+saveEventPresetBtnEl.addEventListener("click", () => { void savePreset("event"); });
+applyEventPresetBtnEl.addEventListener("click", () => { applyPreset("event"); });
+deleteEventPresetBtnEl.addEventListener("click", () => { deletePreset("event"); });
+transferShortcutFailedReviewBtnEl.addEventListener("click", () => { applyTransferShortcut("failed-review"); });
+transferShortcutNotesBtnEl.addEventListener("click", () => { applyTransferShortcut("has-note"); });
+transferShortcutTodayBtnEl.addEventListener("click", () => { applyTransferShortcut("today"); });
+eventShortcutFailuresBtnEl.addEventListener("click", () => { applyEventShortcut("failures"); });
+eventShortcutSettlementBtnEl.addEventListener("click", () => { applyEventShortcut("settlement"); });
+eventShortcutLast24hBtnEl.addEventListener("click", () => { applyEventDateShortcut("last-24h"); });
+eventShortcutLast7dBtnEl.addEventListener("click", () => { applyEventDateShortcut("last-7d"); });
+eventShortcutLast30dBtnEl.addEventListener("click", () => { applyEventDateShortcut("last-30d"); });
+eventDensityComfortableBtnEl.addEventListener("click", () => { applyEventDensity("comfortable"); });
+eventDensityCompactBtnEl.addEventListener("click", () => { applyEventDensity("compact"); });
+eventSortOldestBtnEl.addEventListener("click", () => {
+  applyEventSortOrder("oldest");
+  renderEvents(state.transferEvents);
+});
+eventSortNewestBtnEl.addEventListener("click", () => {
+  applyEventSortOrder("newest");
+  renderEvents(state.transferEvents);
+});
+eventExpandPrevBtnEl.addEventListener("click", () => { navigateExpandedEvent("previous"); });
+eventExpandNextBtnEl.addEventListener("click", () => { navigateExpandedEvent("next"); });
+eventFailurePrevBtnEl.addEventListener("click", () => { navigateFailureEvent("previous"); });
+eventFailureNextBtnEl.addEventListener("click", () => { navigateFailureEvent("next"); });
+eventFailedOnlyToggleBtnEl.addEventListener("click", () => { toggleFailedOnlyEvents(); });
+eventAutoApplyBtnEl.addEventListener("click", () => { applyEventAutoApply(!state.eventAutoApply); });
+copyEventFiltersBtnEl.addEventListener("click", () => { void copyEventFiltersQuery(); });
+exportEventsCsvBtnEl.addEventListener("click", () => { exportFilteredTransferEvents("csv"); });
+exportEventsJsonBtnEl.addEventListener("click", () => { exportFilteredTransferEvents("json"); });
+copyEventsDigestBtnEl.addEventListener("click", () => { void copyFilteredTransferEventsDigest(); });
+copyFailedEventsDigestBtnEl.addEventListener("click", () => { void copyFailedTransferEventsDigest(); });
+
+[eventTypeFilterEl, eventStatusFilterEl, eventDateFromEl, eventDateToEl].forEach((el) => {
+  el.addEventListener("change", () => {
+    scheduleAutoApplyEventFilters();
+  });
+});
+
+if (eventSearchFilterEl) {
+  eventSearchFilterEl.addEventListener("input", () => {
+    scheduleAutoApplyEventFilters();
+  });
+}
+
+window.addEventListener("keydown", (event) => {
+  const action = getShortcutAction(event);
+  if (!action) return;
+
+  event.preventDefault();
+  if (action === "copy-transfer-id") {
+    void copyTransferValue("transfer_id");
+    return;
+  }
+  if (action === "copy-transfer-link") {
+    void copyTransferValue("link");
+    return;
+  }
+  if (action === "reload-transfer-details") {
+    void loadTransferDetails();
+    return;
+  }
+  if (action === "apply-selected-preset") {
+    applySelectedPresetShortcut();
+    return;
+  }
+  if (action === "copy-event-filters") {
+    void copyEventFiltersQuery();
+    return;
+  }
+  if (action === "copy-event-digest") {
+    void copyFilteredTransferEventsDigest();
+    return;
+  }
+  if (action === "copy-failed-event-digest") {
+    void copyFailedTransferEventsDigest();
+    return;
+  }
+  if (action === "sort-events-newest") {
+    applyEventSortOrder("newest");
+    renderEvents(state.transferEvents);
+    return;
+  }
+  if (action === "sort-events-oldest") {
+    applyEventSortOrder("oldest");
+    renderEvents(state.transferEvents);
+    return;
+  }
+  if (action === "clear-event-filters") {
+    clearAllEventFilters();
+    return;
+  }
+  if (action === "toggle-event-failed-only") {
+    toggleFailedOnlyEvents();
+    return;
+  }
+  if (action === "event-expand-previous") {
+    navigateExpandedEvent("previous");
+    return;
+  }
+  if (action === "event-expand-next") {
+    navigateExpandedEvent("next");
+    return;
+  }
+  if (action === "event-failure-previous") {
+    navigateFailureEvent("previous");
+    return;
+  }
+  if (action === "event-failure-next") {
+    navigateFailureEvent("next");
+  }
+});
 
 cancelTransferBtn.addEventListener("click", async () => {
   if (!state.selectedTransferId) return;
@@ -740,12 +1827,36 @@ phoneLinkCancelBtnEl.addEventListener("click", () => {
 
 // ── Load more ────────────────────────────────────────
 loadMoreBtnEl.addEventListener("click", () => { void loadTransfers(true); });
+eventLoadMoreBtnEl.addEventListener("click", () => { void loadMoreEvents(); });
 
 // ── Boot ──────────────────────────────────────────────
+state.transferFilterPresets = readStoredPresets(TRANSFER_PRESETS_KEY);
+state.eventFilterPresets = readStoredPresets(EVENT_PRESETS_KEY);
+state.eventFilters = readStoredEventFilters(EVENT_FILTERS_KEY);
+const urlEventFilterState = readEventFiltersFromSearch(window.location.search);
+if (urlEventFilterState.hasUrlFilters) {
+  state.eventFilters = urlEventFilterState.filters;
+}
+renderTransferPresetOptions();
+renderEventPresetOptions();
+applyEventAutoApply(window.localStorage.getItem(EVENT_AUTO_APPLY_KEY) === "true");
+applyEventFilterValues(state.eventFilters);
+applyEventDensity(window.localStorage.getItem(EVENT_DENSITY_KEY) || "comfortable");
+applyEventSortOrder(window.localStorage.getItem(EVENT_SORT_KEY) || "oldest");
+history.replaceState(null, "", buildUrlWithEventFilters(window.location.href, state.eventFilters));
+syncEventExportButtons();
+
 const persistedUser = window.localStorage.getItem(SESSION_KEY);
 if (persistedUser) {
   setSignedInUser(persistedUser);
-  void Promise.allSettled([loadTransfers(), loadKycStatus()]);
+  const deepLinkId = getDeepLinkTransferId(window.location.search);
+  await Promise.allSettled([loadTransfers(), loadKycStatus()]);
+  if (deepLinkId) {
+    state.selectedTransferId = deepLinkId;
+    renderTransferList();
+    void loadTransferDetails(deepLinkId);
+    startPolling(deepLinkId);
+  }
 } else {
   applyAuthState();
 }

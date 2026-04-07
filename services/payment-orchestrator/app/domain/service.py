@@ -2,7 +2,7 @@ import base64
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,7 +15,7 @@ from app.domain.errors import (
 )
 from app.config import settings
 from app.domain.connector_client import submit_payout
-from app.domain.ledger_client import post_transfer_entry
+from app.domain.ledger_client import post_reversal_entry, post_transfer_entry
 from app.domain.models import Transfer, TransferEvent, TransferStatus
 from app.domain.prechecks import run_prechecks
 
@@ -92,6 +92,14 @@ class PaymentOrchestratorService:
             raise TransferNotFoundError("transfer not found")
         return transfer
 
+    def update_transfer_note(self, transfer_id: str, note: Optional[str]) -> Transfer:
+        transfer = self.get_transfer(transfer_id)
+        normalized_note = note.strip() if note is not None else None
+        transfer.note = normalized_note or None
+        self.db.commit()
+        self.db.refresh(transfer)
+        return transfer
+
     def transition_transfer(
         self,
         transfer_id: str,
@@ -147,7 +155,37 @@ class PaymentOrchestratorService:
                     return transfer
 
             if settings.ledger_posting_enabled:
-                post_transfer_entry(transfer)
+                ledger_result = post_transfer_entry(transfer)
+                if ledger_result.get("ok") != "true":
+                    transfer.status = TransferStatus.FAILED
+                    transfer.failure_reason = ledger_result.get("reason", "ledger_posting_failed")
+                    self._record_event(
+                        transfer=transfer,
+                        event_type="TRANSFER_LEDGER_POSTING_FAILED",
+                        from_status=previous_status,
+                        to_status=TransferStatus.FAILED,
+                        failure_reason=transfer.failure_reason,
+                    )
+                    self.db.commit()
+                    self.db.refresh(transfer)
+                    return transfer
+
+        if transfer.status == TransferStatus.SETTLED and next_status == TransferStatus.REVERSED:
+            if settings.ledger_posting_enabled:
+                reversal_result = post_reversal_entry(transfer)
+                if reversal_result.get("ok") != "true":
+                    transfer.status = TransferStatus.FAILED
+                    transfer.failure_reason = reversal_result.get("reason", "ledger_reversal_posting_failed")
+                    self._record_event(
+                        transfer=transfer,
+                        event_type="TRANSFER_LEDGER_REVERSAL_POSTING_FAILED",
+                        from_status=previous_status,
+                        to_status=TransferStatus.FAILED,
+                        failure_reason=transfer.failure_reason,
+                    )
+                    self.db.commit()
+                    self.db.refresh(transfer)
+                    return transfer
 
         transfer.status = next_status
         transfer.failure_reason = (
@@ -215,14 +253,74 @@ class PaymentOrchestratorService:
         self.db.refresh(transfer)
         return transfer
 
-    def list_transfer_events(self, transfer_id: str) -> list[TransferEvent]:
+    def list_transfer_events(
+        self,
+        transfer_id: str,
+        event_type: Optional[str] = None,
+        to_status: Optional[TransferStatus] = None,
+        created_at_from: Optional[datetime] = None,
+        created_at_to: Optional[datetime] = None,
+    ) -> list[TransferEvent]:
         transfer = self.get_transfer(transfer_id)
         del transfer
+        query = select(TransferEvent).where(TransferEvent.transfer_id == transfer_id)
+        if event_type:
+            query = query.where(TransferEvent.event_type == event_type)
+        if to_status:
+            query = query.where(TransferEvent.to_status == to_status)
+        if created_at_from is not None:
+            query = query.where(TransferEvent.created_at >= created_at_from)
+        if created_at_to is not None:
+            query = query.where(TransferEvent.created_at <= created_at_to)
         return self.db.execute(
-            select(TransferEvent)
-            .where(TransferEvent.transfer_id == transfer_id)
-            .order_by(TransferEvent.created_at.asc())
+            query.order_by(TransferEvent.created_at.asc())
         ).scalars().all()
+
+    def list_transfer_events_paginated(
+        self,
+        transfer_id: str,
+        event_type: Optional[str] = None,
+        to_status: Optional[TransferStatus] = None,
+        limit: int = 50,
+        cursor: Optional[str] = None,
+        created_at_from: Optional[datetime] = None,
+        created_at_to: Optional[datetime] = None,
+    ) -> tuple[list[TransferEvent], Optional[str]]:
+        transfer = self.get_transfer(transfer_id)
+        del transfer
+
+        offset = 0
+        if cursor is not None:
+            try:
+                offset = int(base64.b64decode(cursor.encode()).decode())
+            except Exception:
+                offset = 0
+
+        query = select(TransferEvent).where(TransferEvent.transfer_id == transfer_id)
+        if event_type:
+            query = query.where(TransferEvent.event_type == event_type)
+        if to_status:
+            query = query.where(TransferEvent.to_status == to_status)
+        if created_at_from is not None:
+            query = query.where(TransferEvent.created_at >= created_at_from)
+        if created_at_to is not None:
+            query = query.where(TransferEvent.created_at <= created_at_to)
+
+        rows = list(
+            self.db.execute(
+                query.order_by(TransferEvent.created_at.asc(), TransferEvent.event_id.asc())
+                .offset(offset)
+                .limit(limit + 1)
+            ).scalars().all()
+        )
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+
+        next_cursor: Optional[str] = None
+        if has_more:
+            next_cursor = base64.b64encode(str(offset + limit).encode()).decode()
+
+        return rows, next_cursor
 
     def relay_unprocessed_events(self, limit: int = 100) -> list[TransferEvent]:
         events = self.db.execute(
@@ -241,6 +339,41 @@ class PaymentOrchestratorService:
         for event in events:
             self.db.refresh(event)
         return events
+
+    def summarize_transfer_events(self, transfer_id: str) -> dict:
+        transfer = self.get_transfer(transfer_id)
+        del transfer
+
+        total_events = self.db.execute(
+            select(func.count())
+            .select_from(TransferEvent)
+            .where(TransferEvent.transfer_id == transfer_id)
+        ).scalar_one()
+
+        by_event_type_rows = self.db.execute(
+            select(TransferEvent.event_type, func.count())
+            .where(TransferEvent.transfer_id == transfer_id)
+            .group_by(TransferEvent.event_type)
+        ).all()
+
+        by_to_status_rows = self.db.execute(
+            select(TransferEvent.to_status, func.count())
+            .where(
+                TransferEvent.transfer_id == transfer_id,
+                TransferEvent.to_status.is_not(None),
+            )
+            .group_by(TransferEvent.to_status)
+        ).all()
+
+        return {
+            "transfer_id": transfer_id,
+            "total_events": int(total_events),
+            "by_event_type": {str(event_type): int(count) for event_type, count in by_event_type_rows},
+            "by_to_status": {
+                (status.value if hasattr(status, "value") else str(status)): int(count)
+                for status, count in by_to_status_rows
+            },
+        }
 
     def cancel_transfer(self, transfer_id: str) -> Transfer:
         transfer = self.get_transfer(transfer_id)
@@ -269,6 +402,9 @@ class PaymentOrchestratorService:
         status: Optional[TransferStatus] = None,
         limit: int = 20,
         cursor: Optional[str] = None,
+        created_at_from: Optional[datetime] = None,
+        created_at_to: Optional[datetime] = None,
+        q: Optional[str] = None,
     ) -> tuple:
         offset = 0
         if cursor is not None:
@@ -282,13 +418,25 @@ class PaymentOrchestratorService:
             conditions.append(Transfer.sender_user_id == sender_user_id)
         if status is not None:
             conditions.append(Transfer.status == status)
+        if created_at_from is not None:
+            conditions.append(Transfer.created_at >= created_at_from)
+        if created_at_to is not None:
+            conditions.append(Transfer.created_at <= created_at_to)
+        if q is not None and q.strip():
+            lowered_q = f"%{q.strip().lower()}%"
+            conditions.append(
+                or_(
+                    func.lower(func.coalesce(Transfer.note, "")).like(lowered_q),
+                    func.lower(func.coalesce(Transfer.failure_reason, "")).like(lowered_q),
+                )
+            )
 
-        q = select(Transfer)
+        query = select(Transfer)
         if conditions:
-            q = q.where(and_(*conditions))
-        q = q.order_by(Transfer.created_at.asc(), Transfer.transfer_id.asc()).offset(offset).limit(limit + 1)
+            query = query.where(and_(*conditions))
+        query = query.order_by(Transfer.created_at.asc(), Transfer.transfer_id.asc()).offset(offset).limit(limit + 1)
 
-        rows = list(self.db.execute(q).scalars().all())
+        rows = list(self.db.execute(query).scalars().all())
         has_more = len(rows) > limit
         rows = rows[:limit]
         next_cursor: Optional[str] = None

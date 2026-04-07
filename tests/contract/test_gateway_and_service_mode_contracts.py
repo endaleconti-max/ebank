@@ -11,11 +11,12 @@ import importlib
 
 
 class _DummyResponse:
-    def __init__(self, status_code: int, payload: dict):
+    def __init__(self, status_code: int, payload: dict, headers=None):
         self.status_code = status_code
         import json
 
         self.content = json.dumps(payload).encode("utf-8")
+        self.headers = headers or {}
 
 
 def _create_ledger_account(ledger_client, owner_id: str, account_type: str) -> str:
@@ -439,8 +440,8 @@ def test_gateway_transfer_events_passthrough_contract(gateway_client, orchestrat
     )
     gateway_internal_client = events_route.endpoint.__globals__["_client"]
 
-    async def _events_inproc(transfer_id: str, headers: dict) -> Any:
-        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", headers=headers)
+    async def _events_inproc(transfer_id: str, params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", params=params, headers=headers)
         return _DummyResponse(resp.status_code, resp.json())
 
     gateway_internal_client.list_transfer_events = _events_inproc
@@ -464,6 +465,77 @@ def test_gateway_transfer_events_passthrough_contract(gateway_client, orchestrat
     assert "TRANSFER_CREATED" in cancelled_types
     assert "TRANSFER_CANCELLED" in cancelled_types
     assert any(e.get("failure_reason") == "CANCELLED" for e in cancelled_events)
+
+
+def test_gateway_transfer_events_pagination_contract(gateway_client, orchestrator_client) -> None:
+    create = orchestrator_client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-events-page",
+            "recipient_phone_e164": "+15550707072",
+            "currency": "USD",
+            "amount_minor": 333,
+        },
+        headers={"Idempotency-Key": "events-page-1"},
+    )
+    assert create.status_code == 201
+    transfer_id = create.json()["transfer_id"]
+
+    orchestrator_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "VALIDATED"})
+    orchestrator_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "RESERVED"})
+    submitted = orchestrator_client.post(
+        f"/v1/transfers/{transfer_id}/transition", json={"status": "SUBMITTED_TO_RAIL"}
+    )
+    external_ref = submitted.json()["connector_external_ref"]
+    orchestrator_client.post(
+        "/v1/transfers/callbacks/connector",
+        json={"external_ref": external_ref, "status": "CONFIRMED"},
+    )
+
+    events_route = next(
+        r
+        for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers/{transfer_id}/events"
+    )
+    gateway_internal_client = events_route.endpoint.__globals__["_client"]
+
+    async def _events_inproc(transfer_id: str, params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get(
+            f"/v1/transfers/{transfer_id}/events",
+            params=params,
+            headers=headers,
+        )
+        return _DummyResponse(resp.status_code, resp.json(), headers=dict(resp.headers))
+
+    gateway_internal_client.list_transfer_events = _events_inproc
+
+    full = gateway_client.get(f"/v1/transfers/{transfer_id}/events")
+    assert full.status_code == 200
+    full_events = full.json()
+    assert len(full_events) >= 5
+
+    page1 = gateway_client.get(
+        f"/v1/transfers/{transfer_id}/events",
+        params={"limit": 2},
+    )
+    assert page1.status_code == 200
+    p1_events = page1.json()
+    cursor1 = page1.headers.get("X-Next-Cursor")
+    assert len(p1_events) == 2
+    assert cursor1
+
+    page2 = gateway_client.get(
+        f"/v1/transfers/{transfer_id}/events",
+        params={"limit": 2, "cursor": cursor1},
+    )
+    assert page2.status_code == 200
+    p2_events = page2.json()
+    assert len(p2_events) >= 2
+
+    combined = p1_events + p2_events
+    combined_ids = [e["event_id"] for e in combined]
+    assert len(set(combined_ids)) == len(combined_ids)
+    assert combined_ids == [e["event_id"] for e in full_events[: len(combined_ids)]]
 
 
 def test_gateway_connector_transaction_events_passthrough_contract(gateway_client, connector_client) -> None:
@@ -1127,8 +1199,8 @@ def test_gateway_transfer_transition_contract(
         resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}", headers=headers)
         return _DummyResponse(resp.status_code, resp.json())
 
-    async def _events_inproc(transfer_id: str, headers: dict) -> Any:
-        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", headers=headers)
+    async def _events_inproc(transfer_id: str, params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", params=params, headers=headers)
         return _DummyResponse(resp.status_code, resp.json())
 
     gw_client_ref.create_transfer = _create_inproc
@@ -1229,8 +1301,8 @@ def test_gateway_full_e2e_happy_path_contract(
         resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}", headers=headers)
         return _DummyResponse(resp.status_code, resp.json())
 
-    async def _events_inproc(transfer_id: str, headers: dict) -> Any:
-        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", headers=headers)
+    async def _events_inproc(transfer_id: str, params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", params=params, headers=headers)
         return _DummyResponse(resp.status_code, resp.json())
 
     async def _callback_inproc(payload: dict, headers: dict) -> Any:
@@ -1454,8 +1526,8 @@ def test_gateway_failed_transition_contract(
         resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}", headers=headers)
         return _DummyResponse(resp.status_code, resp.json())
 
-    async def _events_inproc(transfer_id: str, headers: dict) -> Any:
-        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", headers=headers)
+    async def _events_inproc(transfer_id: str, params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", params=params, headers=headers)
         return _DummyResponse(resp.status_code, resp.json())
 
     gw_client.create_transfer = _create_inproc
@@ -1566,8 +1638,8 @@ def test_gateway_reversed_transition_contract(
         resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}", headers=headers)
         return _DummyResponse(resp.status_code, resp.json())
 
-    async def _events_inproc(transfer_id: str, headers: dict) -> Any:
-        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", headers=headers)
+    async def _events_inproc(transfer_id: str, params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", params=params, headers=headers)
         return _DummyResponse(resp.status_code, resp.json())
 
     async def _callback_inproc(payload: dict, headers: dict) -> Any:
@@ -1835,3 +1907,712 @@ def test_gateway_ledger_posting_on_submission_contract(
     finally:
         svc_dict["post_transfer_entry"] = original_post_entry
         svc_dict["settings"].ledger_posting_enabled = original_ledger_enabled
+
+
+def test_gateway_ledger_reversal_posting_on_reversed_contract(
+    gateway_client, orchestrator_client, ledger_client
+) -> None:
+    """After a SETTLED transfer is reversed, the transit account is debited back
+    and the sender account is credited back."""
+
+    sender_acct_resp = ledger_client.post(
+        "/v1/ledger/accounts",
+        json={
+            "owner_type": "USER",
+            "owner_id": "u-led-gw-rev-1",
+            "account_type": "USER_AVAILABLE",
+            "currency": "USD",
+        },
+    )
+    assert sender_acct_resp.status_code == 201
+    sender_acct_id = sender_acct_resp.json()["account_id"]
+
+    transit_acct_resp = ledger_client.post(
+        "/v1/ledger/accounts",
+        json={
+            "owner_type": "SYSTEM",
+            "owner_id": "transit-pool-rev",
+            "account_type": "CONNECTOR_SETTLEMENT",
+            "currency": "USD",
+        },
+    )
+    assert transit_acct_resp.status_code == 201
+    transit_acct_id = transit_acct_resp.json()["account_id"]
+
+    treasury_resp = ledger_client.post(
+        "/v1/ledger/accounts",
+        json={
+            "owner_type": "SYSTEM",
+            "owner_id": "treasury-rev",
+            "account_type": "TREASURY",
+            "currency": "USD",
+        },
+    )
+    assert treasury_resp.status_code == 201
+    treasury_acct_id = treasury_resp.json()["account_id"]
+
+    seed = ledger_client.post(
+        "/v1/ledger/postings",
+        json={
+            "external_ref": "seed-led-gw-rev-1",
+            "transfer_id": "seed-transfer-rev-1",
+            "entry_type": "ADJUSTMENT",
+            "postings": [
+                {"account_id": treasury_acct_id, "direction": "DEBIT", "amount_minor": 50000, "currency": "USD"},
+                {"account_id": sender_acct_id, "direction": "CREDIT", "amount_minor": 50000, "currency": "USD"},
+            ],
+        },
+    )
+    assert seed.status_code == 201
+
+    gw_xfer_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers" and getattr(r, "methods", None) == {"POST"}
+    )
+    gw_client = gw_xfer_route.endpoint.__globals__["_client"]
+
+    async def _create_inproc(payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post("/v1/transfers", json=payload, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _transition_inproc(transfer_id: str, payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post(
+            f"/v1/transfers/{transfer_id}/transition", json=payload, headers=headers
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _callback_inproc(payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post(
+            "/v1/transfers/callbacks/connector",
+            json=payload,
+            headers=headers,
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gw_client.create_transfer = _create_inproc
+    gw_client.transition_transfer = _transition_inproc
+    gw_client.connector_callback = _callback_inproc
+
+    orch_transition_route = next(
+        r for r in orchestrator_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers/{transfer_id}/transition"
+    )
+    orch_cls = orch_transition_route.endpoint.__globals__["PaymentOrchestratorService"]
+    svc_dict = orch_cls.transition_transfer.__globals__
+
+    def _inproc_post_entry(transfer):
+        resp = ledger_client.post(
+            "/v1/ledger/postings",
+            json={
+                "external_ref": f"payout-{transfer.transfer_id}",
+                "transfer_id": transfer.transfer_id,
+                "entry_type": "TRANSFER",
+                "postings": [
+                    {
+                        "account_id": transfer.sender_ledger_account_id,
+                        "direction": "DEBIT",
+                        "amount_minor": transfer.amount_minor,
+                        "currency": transfer.currency,
+                    },
+                    {
+                        "account_id": transfer.transit_ledger_account_id,
+                        "direction": "CREDIT",
+                        "amount_minor": transfer.amount_minor,
+                        "currency": transfer.currency,
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 201
+        return {"ok": "true", "entry_id": resp.json()["entry_id"]}
+
+    captured = {"reversal_entry_id": None}
+
+    def _inproc_post_reversal_entry(transfer):
+        resp = ledger_client.post(
+            "/v1/ledger/postings",
+            json={
+                "external_ref": f"reversal-{transfer.transfer_id}",
+                "transfer_id": transfer.transfer_id,
+                "entry_type": "REVERSAL",
+                "postings": [
+                    {
+                        "account_id": transfer.transit_ledger_account_id,
+                        "direction": "DEBIT",
+                        "amount_minor": transfer.amount_minor,
+                        "currency": transfer.currency,
+                    },
+                    {
+                        "account_id": transfer.sender_ledger_account_id,
+                        "direction": "CREDIT",
+                        "amount_minor": transfer.amount_minor,
+                        "currency": transfer.currency,
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 201
+        captured["reversal_entry_id"] = resp.json()["entry_id"]
+        return {"ok": "true", "entry_id": resp.json()["entry_id"]}
+
+    original_post_entry = svc_dict["post_transfer_entry"]
+    original_post_reversal_entry = svc_dict["post_reversal_entry"]
+    original_ledger_enabled = svc_dict["settings"].ledger_posting_enabled
+    svc_dict["post_transfer_entry"] = _inproc_post_entry
+    svc_dict["post_reversal_entry"] = _inproc_post_reversal_entry
+    svc_dict["settings"].ledger_posting_enabled = True
+
+    try:
+        create = gateway_client.post(
+            "/v1/transfers",
+            json={
+                "sender_user_id": "u-led-gw-rev-1",
+                "recipient_phone_e164": "+15551213131",
+                "currency": "USD",
+                "amount_minor": 1800,
+                "sender_ledger_account_id": sender_acct_id,
+                "transit_ledger_account_id": transit_acct_id,
+            },
+            headers={"Idempotency-Key": "led-gw-rev-contract-1"},
+        )
+        assert create.status_code == 201
+        transfer_id = create.json()["transfer_id"]
+
+        gateway_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "VALIDATED"})
+        gateway_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "RESERVED"})
+        submitted = gateway_client.post(
+            f"/v1/transfers/{transfer_id}/transition", json={"status": "SUBMITTED_TO_RAIL"}
+        )
+        assert submitted.status_code == 200
+        external_ref = submitted.json()["connector_external_ref"]
+
+        settled = gateway_client.post(
+            "/v1/transfers/callbacks/connector",
+            json={"external_ref": external_ref, "status": "CONFIRMED"},
+        )
+        assert settled.status_code == 200
+        assert settled.json()["status"] == "SETTLED"
+
+        reversed_resp = gateway_client.post(
+            f"/v1/transfers/{transfer_id}/transition",
+            json={"status": "REVERSED", "failure_reason": "chargeback_accepted"},
+        )
+        assert reversed_resp.status_code == 200
+        assert reversed_resp.json()["status"] == "REVERSED"
+
+        reversal_entry = ledger_client.get(f"/v1/ledger/entries/{captured['reversal_entry_id']}")
+        assert reversal_entry.status_code == 200
+        assert reversal_entry.json()["entry_type"] == "REVERSAL"
+
+        sender_bal = ledger_client.get(f"/v1/ledger/accounts/{sender_acct_id}/balance")
+        assert sender_bal.json()["balance_minor"] == 50000
+
+        transit_bal = ledger_client.get(f"/v1/ledger/accounts/{transit_acct_id}/balance")
+        assert transit_bal.json()["balance_minor"] == 0
+    finally:
+        svc_dict["post_transfer_entry"] = original_post_entry
+        svc_dict["post_reversal_entry"] = original_post_reversal_entry
+        svc_dict["settings"].ledger_posting_enabled = original_ledger_enabled
+
+
+def test_gateway_ledger_submission_failure_contract(
+    gateway_client, orchestrator_client
+) -> None:
+    """If ledger posting fails on RESERVED->SUBMITTED_TO_RAIL, the transfer is
+    marked FAILED and the reason is visible through gateway lookup/events."""
+
+    gw_xfer_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers" and getattr(r, "methods", None) == {"POST"}
+    )
+    gw_client = gw_xfer_route.endpoint.__globals__["_client"]
+
+    async def _create_inproc(payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post("/v1/transfers", json=payload, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _transition_inproc(transfer_id: str, payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post(
+            f"/v1/transfers/{transfer_id}/transition", json=payload, headers=headers
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _lookup_inproc(transfer_id: str, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}", headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _events_inproc(transfer_id: str, params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", params=params, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gw_client.create_transfer = _create_inproc
+    gw_client.transition_transfer = _transition_inproc
+    gw_client.get_transfer = _lookup_inproc
+    gw_client.list_transfer_events = _events_inproc
+
+    orch_transition_route = next(
+        r for r in orchestrator_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers/{transfer_id}/transition"
+    )
+    orch_cls = orch_transition_route.endpoint.__globals__["PaymentOrchestratorService"]
+    svc_dict = orch_cls.transition_transfer.__globals__
+
+    original_post_entry = svc_dict["post_transfer_entry"]
+    original_ledger_enabled = svc_dict["settings"].ledger_posting_enabled
+    svc_dict["post_transfer_entry"] = lambda _t: {"ok": "false", "reason": "ledger_unavailable"}
+    svc_dict["settings"].ledger_posting_enabled = True
+
+    try:
+        create = gateway_client.post(
+            "/v1/transfers",
+            json={
+                "sender_user_id": "u-led-sub-fail-gw-1",
+                "recipient_phone_e164": "+15551214141",
+                "currency": "USD",
+                "amount_minor": 700,
+                "sender_ledger_account_id": "acct-led-sub-fail-sender",
+                "transit_ledger_account_id": "acct-led-sub-fail-transit",
+            },
+            headers={"Idempotency-Key": "led-sub-fail-gw-idem-1"},
+        )
+        assert create.status_code == 201
+        transfer_id = create.json()["transfer_id"]
+
+        gateway_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "VALIDATED"})
+        gateway_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "RESERVED"})
+        failed = gateway_client.post(
+            f"/v1/transfers/{transfer_id}/transition", json={"status": "SUBMITTED_TO_RAIL"}
+        )
+        assert failed.status_code == 200
+        assert failed.json()["status"] == "FAILED"
+        assert failed.json()["failure_reason"] == "ledger_unavailable"
+
+        lookup = gateway_client.get(f"/v1/transfers/{transfer_id}")
+        assert lookup.status_code == 200
+        assert lookup.json()["status"] == "FAILED"
+        assert lookup.json()["failure_reason"] == "ledger_unavailable"
+
+        events = gateway_client.get(f"/v1/transfers/{transfer_id}/events").json()
+        failed_events = [e for e in events if e.get("to_status") == "FAILED"]
+        assert failed_events
+        assert failed_events[-1]["failure_reason"] == "ledger_unavailable"
+
+        filtered = gateway_client.get(
+            f"/v1/transfers/{transfer_id}/events",
+            params={"event_type": "TRANSFER_LEDGER_POSTING_FAILED"},
+        )
+        assert filtered.status_code == 200
+        filtered_events = filtered.json()
+        assert len(filtered_events) == 1
+        assert filtered_events[0]["event_type"] == "TRANSFER_LEDGER_POSTING_FAILED"
+        assert filtered_events[0]["failure_reason"] == "ledger_unavailable"
+
+        failed_only = gateway_client.get(
+            f"/v1/transfers/{transfer_id}/events",
+            params={"to_status": "FAILED"},
+        )
+        assert failed_only.status_code == 200
+        failed_only_events = failed_only.json()
+        assert failed_only_events
+        assert all(e["to_status"] == "FAILED" for e in failed_only_events)
+
+        combined = gateway_client.get(
+            f"/v1/transfers/{transfer_id}/events",
+            params={"event_type": "TRANSFER_LEDGER_POSTING_FAILED", "to_status": "FAILED"},
+        )
+        assert combined.status_code == 200
+        combined_events = combined.json()
+        assert len(combined_events) == 1
+        assert combined_events[0]["event_type"] == "TRANSFER_LEDGER_POSTING_FAILED"
+        assert combined_events[0]["to_status"] == "FAILED"
+    finally:
+        svc_dict["post_transfer_entry"] = original_post_entry
+        svc_dict["settings"].ledger_posting_enabled = original_ledger_enabled
+
+
+def test_gateway_ledger_reversal_failure_contract(
+    gateway_client, orchestrator_client
+) -> None:
+    """If ledger reversal posting fails on SETTLED->REVERSED, transfer ends
+    in FAILED and the reason is visible through gateway lookup/events."""
+
+    gw_xfer_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers" and getattr(r, "methods", None) == {"POST"}
+    )
+    gw_client = gw_xfer_route.endpoint.__globals__["_client"]
+
+    async def _create_inproc(payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post("/v1/transfers", json=payload, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _transition_inproc(transfer_id: str, payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post(
+            f"/v1/transfers/{transfer_id}/transition", json=payload, headers=headers
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _lookup_inproc(transfer_id: str, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}", headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _events_inproc(transfer_id: str, params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", params=params, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    async def _callback_inproc(payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.post(
+            "/v1/transfers/callbacks/connector",
+            json=payload,
+            headers=headers,
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gw_client.create_transfer = _create_inproc
+    gw_client.transition_transfer = _transition_inproc
+    gw_client.get_transfer = _lookup_inproc
+    gw_client.list_transfer_events = _events_inproc
+    gw_client.connector_callback = _callback_inproc
+
+    orch_transition_route = next(
+        r for r in orchestrator_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers/{transfer_id}/transition"
+    )
+    orch_cls = orch_transition_route.endpoint.__globals__["PaymentOrchestratorService"]
+    svc_dict = orch_cls.transition_transfer.__globals__
+
+    original_post_entry = svc_dict["post_transfer_entry"]
+    original_post_reversal_entry = svc_dict["post_reversal_entry"]
+    original_ledger_enabled = svc_dict["settings"].ledger_posting_enabled
+    svc_dict["post_transfer_entry"] = lambda _t: {"ok": "true", "entry_id": "submission-ok"}
+    svc_dict["post_reversal_entry"] = lambda _t: {"ok": "false", "reason": "ledger_reversal_unavailable"}
+    svc_dict["settings"].ledger_posting_enabled = True
+
+    try:
+        create = gateway_client.post(
+            "/v1/transfers",
+            json={
+                "sender_user_id": "u-led-rev-fail-gw-1",
+                "recipient_phone_e164": "+15551215151",
+                "currency": "USD",
+                "amount_minor": 900,
+                "sender_ledger_account_id": "acct-led-rev-fail-sender",
+                "transit_ledger_account_id": "acct-led-rev-fail-transit",
+            },
+            headers={"Idempotency-Key": "led-rev-fail-gw-idem-1"},
+        )
+        assert create.status_code == 201
+        transfer_id = create.json()["transfer_id"]
+
+        gateway_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "VALIDATED"})
+        gateway_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "RESERVED"})
+        submitted = gateway_client.post(
+            f"/v1/transfers/{transfer_id}/transition", json={"status": "SUBMITTED_TO_RAIL"}
+        )
+        assert submitted.status_code == 200
+        external_ref = submitted.json()["connector_external_ref"]
+
+        settled = gateway_client.post(
+            "/v1/transfers/callbacks/connector",
+            json={"external_ref": external_ref, "status": "CONFIRMED"},
+        )
+        assert settled.status_code == 200
+        assert settled.json()["status"] == "SETTLED"
+
+        failed = gateway_client.post(
+            f"/v1/transfers/{transfer_id}/transition",
+            json={"status": "REVERSED", "failure_reason": "chargeback_request"},
+        )
+        assert failed.status_code == 200
+        assert failed.json()["status"] == "FAILED"
+        assert failed.json()["failure_reason"] == "ledger_reversal_unavailable"
+
+        lookup = gateway_client.get(f"/v1/transfers/{transfer_id}")
+        assert lookup.status_code == 200
+        assert lookup.json()["status"] == "FAILED"
+        assert lookup.json()["failure_reason"] == "ledger_reversal_unavailable"
+
+        events = gateway_client.get(f"/v1/transfers/{transfer_id}/events").json()
+        failed_events = [e for e in events if e.get("to_status") == "FAILED"]
+        assert failed_events
+        assert failed_events[-1]["failure_reason"] == "ledger_reversal_unavailable"
+
+        filtered = gateway_client.get(
+            f"/v1/transfers/{transfer_id}/events",
+            params={"event_type": "TRANSFER_LEDGER_REVERSAL_POSTING_FAILED"},
+        )
+        assert filtered.status_code == 200
+        filtered_events = filtered.json()
+        assert len(filtered_events) == 1
+        assert filtered_events[0]["event_type"] == "TRANSFER_LEDGER_REVERSAL_POSTING_FAILED"
+        assert filtered_events[0]["failure_reason"] == "ledger_reversal_unavailable"
+
+        failed_only = gateway_client.get(
+            f"/v1/transfers/{transfer_id}/events",
+            params={"to_status": "FAILED"},
+        )
+        assert failed_only.status_code == 200
+        failed_only_events = failed_only.json()
+        assert failed_only_events
+        assert all(e["to_status"] == "FAILED" for e in failed_only_events)
+
+        combined = gateway_client.get(
+            f"/v1/transfers/{transfer_id}/events",
+            params={"event_type": "TRANSFER_LEDGER_REVERSAL_POSTING_FAILED", "to_status": "FAILED"},
+        )
+        assert combined.status_code == 200
+        combined_events = combined.json()
+        assert len(combined_events) == 1
+        assert combined_events[0]["event_type"] == "TRANSFER_LEDGER_REVERSAL_POSTING_FAILED"
+        assert combined_events[0]["to_status"] == "FAILED"
+    finally:
+        svc_dict["post_transfer_entry"] = original_post_entry
+        svc_dict["post_reversal_entry"] = original_post_reversal_entry
+        svc_dict["settings"].ledger_posting_enabled = original_ledger_enabled
+
+
+def test_gateway_transfer_events_invalid_to_status_contract(gateway_client) -> None:
+    resp = gateway_client.get(
+        "/v1/transfers/t-invalid/events",
+        params={"to_status": "NOT_A_STATUS"},
+    )
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail[0]["loc"] == ["query", "to_status"]
+
+
+def test_gateway_transfer_events_summary_contract(gateway_client, orchestrator_client) -> None:
+    create = orchestrator_client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-events-summary",
+            "recipient_phone_e164": "+15551216161",
+            "currency": "USD",
+            "amount_minor": 410,
+        },
+        headers={"Idempotency-Key": "events-summary-1"},
+    )
+    assert create.status_code == 201
+    transfer_id = create.json()["transfer_id"]
+
+    orchestrator_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "VALIDATED"})
+    orchestrator_client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "RESERVED"})
+    submitted = orchestrator_client.post(
+        f"/v1/transfers/{transfer_id}/transition", json={"status": "SUBMITTED_TO_RAIL"}
+    )
+    external_ref = submitted.json()["connector_external_ref"]
+    orchestrator_client.post(
+        "/v1/transfers/callbacks/connector",
+        json={"external_ref": external_ref, "status": "CONFIRMED"},
+    )
+
+    events_summary_route = next(
+        r
+        for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers/{transfer_id}/events/summary"
+    )
+    gateway_internal_client = events_summary_route.endpoint.__globals__["_client"]
+
+    async def _summary_inproc(transfer_id: str, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events/summary", headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gateway_internal_client.get_transfer_event_summary = _summary_inproc
+
+    summary_resp = gateway_client.get(
+        f"/v1/transfers/{transfer_id}/events/summary",
+        headers={"X-Request-Id": "gw-events-summary-1"},
+    )
+    assert summary_resp.status_code == 200
+    summary = summary_resp.json()
+    assert summary["transfer_id"] == transfer_id
+    assert summary["total_events"] >= 5
+    assert summary["by_event_type"].get("TRANSFER_CREATED") == 1
+    assert summary["by_to_status"].get("SETTLED") == 1
+    assert summary_resp.headers.get("X-Request-Id") == "gw-events-summary-1"
+
+
+def test_gateway_transfer_date_range_filter_contract(gateway_client, orchestrator_client) -> None:
+    """Date-range filters work end-to-end through gateway → orchestrator."""
+    from datetime import datetime, timedelta, timezone
+
+    before = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+
+    create = orchestrator_client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-contr-date",
+            "recipient_phone_e164": "+15559990001",
+            "currency": "USD",
+            "amount_minor": 750,
+        },
+        headers={"Idempotency-Key": "contr-date-range-1"},
+    )
+    assert create.status_code == 201
+    transfer_id = create.json()["transfer_id"]
+
+    after = (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat()
+    far_future = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
+
+    # Patch list_transfers in-process
+    list_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers" and "GET" in getattr(r, "methods", set())
+    )
+    gw_client = list_route.endpoint.__globals__["_client"]
+
+    async def _list_inproc(params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get("/v1/transfers", params=params, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gw_client.list_transfers = _list_inproc
+
+    # Transfer in range → count == 1
+    resp_in = gateway_client.get("/v1/transfers", params={
+        "sender_user_id": "u-contr-date",
+        "created_at_from": before,
+        "created_at_to": after,
+    })
+    assert resp_in.status_code == 200
+    assert resp_in.json()["count"] == 1
+
+    # Transfer before range → count == 0
+    resp_out = gateway_client.get("/v1/transfers", params={
+        "sender_user_id": "u-contr-date",
+        "created_at_from": after,
+        "created_at_to": far_future,
+    })
+    assert resp_out.status_code == 200
+    assert resp_out.json()["count"] == 0
+
+    # Patch list_transfer_events in-process
+    events_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers/{transfer_id}/events"
+    )
+    gw_events_client = events_route.endpoint.__globals__["_client"]
+
+    async def _events_inproc(transfer_id: str, params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}/events", params=params, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gw_events_client.list_transfer_events = _events_inproc
+
+    # Events in range → at least 1
+    resp_events_in = gateway_client.get(f"/v1/transfers/{transfer_id}/events", params={
+        "created_at_from": before,
+        "created_at_to": after,
+    })
+    assert resp_events_in.status_code == 200
+    assert len(resp_events_in.json()) >= 1
+
+    # Events out of range → empty list
+    resp_events_out = gateway_client.get(f"/v1/transfers/{transfer_id}/events", params={
+        "created_at_from": after,
+        "created_at_to": far_future,
+    })
+    assert resp_events_out.status_code == 200
+    assert resp_events_out.json() == []
+
+
+def test_gateway_transfer_note_update_contract(gateway_client, orchestrator_client) -> None:
+    create = orchestrator_client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-note-contract",
+            "recipient_phone_e164": "+15558880001",
+            "currency": "USD",
+            "amount_minor": 610,
+            "note": "initial",
+        },
+        headers={"Idempotency-Key": "note-contract-1"},
+    )
+    assert create.status_code == 201
+    transfer_id = create.json()["transfer_id"]
+
+    note_route = next(
+        r
+        for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers/{transfer_id}/note"
+    )
+    gateway_internal_client = note_route.endpoint.__globals__["_client"]
+
+    async def _note_inproc(transfer_id: str, payload: dict, headers: dict) -> Any:
+        resp = orchestrator_client.patch(
+            f"/v1/transfers/{transfer_id}/note",
+            json=payload,
+            headers=headers,
+        )
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gateway_internal_client.update_transfer_note = _note_inproc
+
+    update_resp = gateway_client.patch(
+        f"/v1/transfers/{transfer_id}/note",
+        json={"note": "support follow-up"},
+        headers={"X-Request-Id": "gw-note-1"},
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["note"] == "support follow-up"
+    assert update_resp.headers.get("X-Request-Id") == "gw-note-1"
+
+    lookup_resp = orchestrator_client.get(f"/v1/transfers/{transfer_id}")
+    assert lookup_resp.status_code == 200
+    assert lookup_resp.json()["note"] == "support follow-up"
+
+
+def test_gateway_transfer_search_contract(gateway_client, orchestrator_client) -> None:
+    note_transfer = orchestrator_client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-search-contract",
+            "recipient_phone_e164": "+15557771111",
+            "currency": "USD",
+            "amount_minor": 210,
+            "note": "Dinner reimbursement",
+        },
+        headers={"Idempotency-Key": "search-contract-note-1"},
+    )
+    assert note_transfer.status_code == 201
+
+    failed_transfer = orchestrator_client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-search-contract",
+            "recipient_phone_e164": "+15557771112",
+            "currency": "USD",
+            "amount_minor": 220,
+        },
+        headers={"Idempotency-Key": "search-contract-fail-1"},
+    )
+    assert failed_transfer.status_code == 201
+    failed_id = failed_transfer.json()["transfer_id"]
+
+    failed_update = orchestrator_client.post(
+        f"/v1/transfers/{failed_id}/transition",
+        json={"status": "FAILED", "failure_reason": "connector timeout"},
+    )
+    assert failed_update.status_code == 200
+
+    list_route = next(
+        r for r in gateway_client.app.routes
+        if getattr(r, "path", "") == "/v1/transfers" and "GET" in getattr(r, "methods", set())
+    )
+    gateway_internal_client = list_route.endpoint.__globals__["_client"]
+
+    async def _list_inproc(params: dict, headers: dict) -> Any:
+        resp = orchestrator_client.get("/v1/transfers", params=params, headers=headers)
+        return _DummyResponse(resp.status_code, resp.json())
+
+    gateway_internal_client.list_transfers = _list_inproc
+
+    note_resp = gateway_client.get("/v1/transfers", params={"sender_user_id": "u-search-contract", "q": "dinner"})
+    assert note_resp.status_code == 200
+    assert note_resp.json()["count"] == 1
+    assert note_resp.json()["transfers"][0]["note"] == "Dinner reimbursement"
+
+    failure_resp = gateway_client.get("/v1/transfers", params={"sender_user_id": "u-search-contract", "q": "timeout"})
+    assert failure_resp.status_code == 200
+    assert failure_resp.json()["count"] == 1
+    assert failure_resp.json()["transfers"][0]["failure_reason"] == "connector timeout"

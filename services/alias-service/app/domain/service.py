@@ -32,7 +32,9 @@ class AliasService:
             return record
 
         if existing.otp_code == req.otp_code:
-            existing.verified = True
+            if not existing.verified:
+                existing.verified = True
+                existing.verified_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(existing)
         return existing

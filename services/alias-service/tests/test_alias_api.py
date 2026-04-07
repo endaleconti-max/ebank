@@ -63,3 +63,15 @@ def test_bind_requires_verified_phone() -> None:
         json={"verification_id": verification_id, "user_id": "u-002"},
     )
     assert bind_resp.status_code == 422
+
+
+def test_verify_phone_sets_verified_at_on_success() -> None:
+    first = client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    assert first.status_code == 200
+    assert first.json()["verified"] is False
+    assert first.json()["verified_at"] is None
+
+    second = client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    assert second.status_code == 200
+    assert second.json()["verified"] is True
+    assert second.json()["verified_at"] is not None

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
@@ -14,6 +14,16 @@ _connector_client = ConnectorClient()
 _reconciliation_client = ReconciliationClient()
 _identity_client = IdentityClient()
 _alias_client = AliasClient()
+
+TransferEventStatusFilter = Literal[
+    "CREATED",
+    "VALIDATED",
+    "RESERVED",
+    "SUBMITTED_TO_RAIL",
+    "SETTLED",
+    "FAILED",
+    "REVERSED",
+]
 
 
 def _forward_headers(request: Request) -> dict:
@@ -38,8 +48,19 @@ async def list_transfers(
     status: Optional[str] = None,
     limit: int = 20,
     cursor: Optional[str] = None,
+    created_at_from: Optional[str] = None,
+    created_at_to: Optional[str] = None,
+    q: Optional[str] = None,
 ):
-    params = {k: v for k, v in {"sender_user_id": sender_user_id, "status": status, "limit": limit, "cursor": cursor}.items() if v is not None}
+    params = {k: v for k, v in {
+        "sender_user_id": sender_user_id,
+        "status": status,
+        "limit": limit,
+        "cursor": cursor,
+        "created_at_from": created_at_from,
+        "created_at_to": created_at_to,
+        "q": q,
+    }.items() if v is not None}
     resp = await _client.list_transfers(params=params, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
@@ -49,6 +70,18 @@ async def list_transfers(
 @router.get("/transfers/{transfer_id}")
 async def get_transfer(transfer_id: str, request: Request):
     resp = await _client.get_transfer(transfer_id=transfer_id, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.patch("/transfers/{transfer_id}/note")
+async def update_transfer_note(transfer_id: str, payload: dict, request: Request):
+    resp = await _client.update_transfer_note(
+        transfer_id=transfer_id,
+        payload=payload,
+        headers=_forward_headers(request),
+    )
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
     return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
@@ -71,8 +104,49 @@ async def cancel_transfer(transfer_id: str, request: Request):
 
 
 @router.get("/transfers/{transfer_id}/events")
-async def list_transfer_events(transfer_id: str, request: Request):
-    resp = await _client.list_transfer_events(transfer_id=transfer_id, headers=_forward_headers(request))
+async def list_transfer_events(
+    transfer_id: str,
+    request: Request,
+    event_type: Optional[str] = None,
+    to_status: Optional[TransferEventStatusFilter] = None,
+    limit: Optional[int] = None,
+    cursor: Optional[str] = None,
+    created_at_from: Optional[str] = None,
+    created_at_to: Optional[str] = None,
+):
+    params = {}
+    if event_type:
+        params["event_type"] = event_type
+    if to_status:
+        params["to_status"] = to_status
+    if limit is not None:
+        params["limit"] = limit
+    if cursor:
+        params["cursor"] = cursor
+    if created_at_from:
+        params["created_at_from"] = created_at_from
+    if created_at_to:
+        params["created_at_to"] = created_at_to
+    resp = await _client.list_transfer_events(
+        transfer_id=transfer_id,
+        params=params,
+        headers=_forward_headers(request),
+    )
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
+    out = Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+    next_cursor = None
+    if hasattr(resp, "headers"):
+        headers_obj = getattr(resp, "headers")
+        next_cursor = headers_obj.get("X-Next-Cursor") or headers_obj.get("x-next-cursor")
+    if next_cursor is not None:
+        out.headers["X-Next-Cursor"] = next_cursor
+    return out
+
+
+@router.get("/transfers/{transfer_id}/events/summary")
+async def transfer_event_summary(transfer_id: str, request: Request):
+    resp = await _client.get_transfer_event_summary(transfer_id=transfer_id, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
     return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")

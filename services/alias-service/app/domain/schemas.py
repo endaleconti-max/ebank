@@ -30,6 +30,7 @@ class VerifyPhoneResponse(BaseModel):
     verification_id: str
     phone_e164: str
     verified: bool
+    verified_at: Optional[datetime] = None
 
 
 class BindAliasRequest(BaseModel):

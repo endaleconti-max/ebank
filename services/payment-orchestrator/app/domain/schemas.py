@@ -16,6 +16,10 @@ class CreateTransferRequest(BaseModel):
     transit_ledger_account_id: Optional[str] = Field(default=None, max_length=36)
 
 
+class UpdateTransferNoteRequest(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=140)
+
+
 class TransferResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -62,6 +66,13 @@ class TransferEventResponse(BaseModel):
 class TransferEventRelayResponse(BaseModel):
     events: list[TransferEventResponse]
     exported_count: int
+
+
+class TransferEventSummaryResponse(BaseModel):
+    transfer_id: str
+    total_events: int
+    by_event_type: dict[str, int]
+    by_to_status: dict[str, int]
 
 
 class TransferListResponse(BaseModel):

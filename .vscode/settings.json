@@ -12,6 +12,7 @@
   "python.analysis.typeCheckingMode": "off",
   "python.analysis.reportMissingImports": "none",
   "python.analysis.reportMissingModuleSource": "none",
+  "gitdoc.enabled": true,
   "gitdoc.commitDelay": 30000,
   "gitdoc.autoPush": "onCommit",
   "gitdoc.filePattern": "**/*",

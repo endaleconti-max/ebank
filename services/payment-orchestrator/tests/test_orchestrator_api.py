@@ -285,6 +285,132 @@ def test_transfer_events_record_lifecycle(monkeypatch) -> None:
     assert any(item["to_status"] == "SETTLED" for item in events_resp.json())
 
 
+def test_transfer_events_can_filter_by_event_type(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"orchestrator-evt-filter-{t.transfer_id}"},
+    )
+    monkeypatch.setattr(
+        "app.domain.service.post_transfer_entry",
+        lambda _t: {"ok": "false", "reason": "ledger_unavailable"},
+    )
+    monkeypatch.setattr("app.domain.service.settings.ledger_posting_enabled", True)
+
+    create_resp = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-evt-filter",
+            "recipient_phone_e164": "+15550009992",
+            "currency": "USD",
+            "amount_minor": 333,
+            "sender_ledger_account_id": "acct-evt-filter-sender",
+            "transit_ledger_account_id": "acct-evt-filter-transit",
+        },
+        headers={"Idempotency-Key": "transfer-evt-filter-1"},
+    )
+    transfer_id = create_resp.json()["transfer_id"]
+
+    client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "RESERVED"})
+    client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+
+    filtered_resp = client.get(
+        f"/v1/transfers/{transfer_id}/events",
+        params={"event_type": "TRANSFER_LEDGER_POSTING_FAILED"},
+    )
+    assert filtered_resp.status_code == 200
+    filtered_events = filtered_resp.json()
+    assert len(filtered_events) == 1
+    assert filtered_events[0]["event_type"] == "TRANSFER_LEDGER_POSTING_FAILED"
+    assert filtered_events[0]["failure_reason"] == "ledger_unavailable"
+
+
+def test_transfer_events_pagination_preserves_order(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"orchestrator-evt-page-{t.transfer_id}"},
+    )
+
+    create_resp = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-evt-page",
+            "recipient_phone_e164": "+15550009994",
+            "currency": "USD",
+            "amount_minor": 140,
+        },
+        headers={"Idempotency-Key": "transfer-evt-page-1"},
+    )
+    transfer_id = create_resp.json()["transfer_id"]
+
+    client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "RESERVED"})
+    client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    client.post(
+        "/v1/transfers/callbacks/connector",
+        json={"external_ref": f"orchestrator-evt-page-{transfer_id}", "status": "CONFIRMED"},
+    )
+
+    full = client.get(f"/v1/transfers/{transfer_id}/events").json()
+    assert len(full) >= 5
+
+    page1 = client.get(
+        f"/v1/transfers/{transfer_id}/events",
+        params={"limit": 2},
+    )
+    assert page1.status_code == 200
+    p1_events = page1.json()
+    cursor1 = page1.headers.get("X-Next-Cursor")
+    assert len(p1_events) == 2
+    assert cursor1
+
+    page2 = client.get(
+        f"/v1/transfers/{transfer_id}/events",
+        params={"limit": 2, "cursor": cursor1},
+    )
+    assert page2.status_code == 200
+    p2_events = page2.json()
+    assert len(p2_events) >= 2
+
+    combined_ids = [e["event_id"] for e in p1_events + p2_events]
+    assert combined_ids == [e["event_id"] for e in full[: len(combined_ids)]]
+
+
+def test_transfer_event_summary_counts(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"orchestrator-evt-summary-{t.transfer_id}"},
+    )
+
+    create_resp = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-evt-summary",
+            "recipient_phone_e164": "+15550009993",
+            "currency": "USD",
+            "amount_minor": 222,
+        },
+        headers={"Idempotency-Key": "transfer-evt-summary-1"},
+    )
+    transfer_id = create_resp.json()["transfer_id"]
+
+    client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "RESERVED"})
+    client.post(f"/v1/transfers/{transfer_id}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    client.post(
+        "/v1/transfers/callbacks/connector",
+        json={"external_ref": f"orchestrator-evt-summary-{transfer_id}", "status": "CONFIRMED"},
+    )
+
+    summary_resp = client.get(f"/v1/transfers/{transfer_id}/events/summary")
+    assert summary_resp.status_code == 200
+    summary = summary_resp.json()
+    assert summary["transfer_id"] == transfer_id
+    assert summary["total_events"] >= 5
+    assert summary["by_event_type"].get("TRANSFER_CREATED") == 1
+    assert summary["by_to_status"].get("SETTLED") == 1
+
+
 def test_transfer_list_filtering_and_pagination() -> None:
     # Create 3 transfers: 2 for sender-a, 1 for sender-b
     for i, (sender, phone) in enumerate(
@@ -628,3 +754,394 @@ def test_ledger_posting_skipped_when_disabled(monkeypatch) -> None:
     client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
 
     assert not captured["called"], "post_transfer_entry should not be called when ledger_posting_enabled=False"
+
+
+def test_ledger_reversal_posting_called_on_settled_to_reversed(monkeypatch) -> None:
+    """When ledger_posting_enabled is True, SETTLED->REVERSED calls
+    post_reversal_entry with the transfer carrying ledger account ids."""
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"led-rev-ext-{t.transfer_id}"},
+    )
+
+    captured = {}
+
+    def fake_post_entry(_transfer):
+        return {"ok": "true", "entry_id": "fake-submission-entry"}
+
+    def fake_post_reversal(transfer):
+        captured["transfer_id"] = transfer.transfer_id
+        captured["sender_acct"] = transfer.sender_ledger_account_id
+        captured["transit_acct"] = transfer.transit_ledger_account_id
+        captured["amount"] = transfer.amount_minor
+        return {"ok": "true", "entry_id": "fake-reversal-entry"}
+
+    monkeypatch.setattr("app.domain.service.post_transfer_entry", fake_post_entry)
+    monkeypatch.setattr("app.domain.service.post_reversal_entry", fake_post_reversal)
+    monkeypatch.setattr("app.domain.service.settings.ledger_posting_enabled", True)
+
+    r = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-led-rev-1",
+            "recipient_phone_e164": "+15551230201",
+            "currency": "USD",
+            "amount_minor": 650,
+            "sender_ledger_account_id": "acct-sender-rev-1",
+            "transit_ledger_account_id": "acct-transit-rev-1",
+        },
+        headers={"Idempotency-Key": "led-rev-idem-1"},
+    )
+    assert r.status_code == 201
+    tid = r.json()["transfer_id"]
+
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "RESERVED"})
+    submitted = client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    assert submitted.status_code == 200
+    ext = submitted.json()["connector_external_ref"]
+
+    settled = client.post(
+        "/v1/transfers/callbacks/connector",
+        json={"external_ref": ext, "status": "CONFIRMED"},
+    )
+    assert settled.status_code == 200
+    assert settled.json()["status"] == "SETTLED"
+
+    reversed_resp = client.post(
+        f"/v1/transfers/{tid}/transition",
+        json={"status": "REVERSED", "failure_reason": "chargeback_ok"},
+    )
+    assert reversed_resp.status_code == 200
+    assert reversed_resp.json()["status"] == "REVERSED"
+
+    assert captured.get("transfer_id") == tid
+    assert captured.get("sender_acct") == "acct-sender-rev-1"
+    assert captured.get("transit_acct") == "acct-transit-rev-1"
+    assert captured.get("amount") == 650
+
+
+def test_ledger_reversal_posting_skipped_when_disabled(monkeypatch) -> None:
+    """When ledger_posting_enabled is False, post_reversal_entry is never
+    called during SETTLED->REVERSED."""
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"led-rev-ext2-{t.transfer_id}"},
+    )
+
+    captured = {"called": False}
+
+    def fake_post_reversal(_transfer):
+        captured["called"] = True
+        return {"ok": "true"}
+
+    monkeypatch.setattr("app.domain.service.post_reversal_entry", fake_post_reversal)
+    # ledger_posting_enabled defaults to False — do not override
+
+    r = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-led-rev-2",
+            "recipient_phone_e164": "+15551230202",
+            "currency": "USD",
+            "amount_minor": 420,
+        },
+        headers={"Idempotency-Key": "led-rev-idem-2"},
+    )
+    tid = r.json()["transfer_id"]
+
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "RESERVED"})
+    submitted = client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    ext = submitted.json()["connector_external_ref"]
+
+    client.post(
+        "/v1/transfers/callbacks/connector",
+        json={"external_ref": ext, "status": "CONFIRMED"},
+    )
+
+    reversed_resp = client.post(
+        f"/v1/transfers/{tid}/transition",
+        json={"status": "REVERSED", "failure_reason": "manual_reversal"},
+    )
+    assert reversed_resp.status_code == 200
+    assert not captured["called"], "post_reversal_entry should not be called when ledger_posting_enabled=False"
+
+
+def test_ledger_submission_failure_forces_failed_and_exposes_reason(monkeypatch) -> None:
+    """When submission ledger posting fails, transition does not advance to
+    SUBMITTED_TO_RAIL and the transfer is marked FAILED with the ledger reason."""
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"led-fail-sub-{t.transfer_id}"},
+    )
+    monkeypatch.setattr(
+        "app.domain.service.post_transfer_entry",
+        lambda _t: {"ok": "false", "reason": "ledger_unavailable"},
+    )
+    monkeypatch.setattr("app.domain.service.settings.ledger_posting_enabled", True)
+
+    create = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-led-fail-sub-1",
+            "recipient_phone_e164": "+15551230901",
+            "currency": "USD",
+            "amount_minor": 275,
+            "sender_ledger_account_id": "acct-sub-fail-sender",
+            "transit_ledger_account_id": "acct-sub-fail-transit",
+        },
+        headers={"Idempotency-Key": "led-fail-sub-idem-1"},
+    )
+    tid = create.json()["transfer_id"]
+
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "RESERVED"})
+
+    failed = client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    assert failed.status_code == 200
+    assert failed.json()["status"] == "FAILED"
+    assert failed.json()["failure_reason"] == "ledger_unavailable"
+
+    lookup = client.get(f"/v1/transfers/{tid}")
+    assert lookup.status_code == 200
+    assert lookup.json()["status"] == "FAILED"
+    assert lookup.json()["failure_reason"] == "ledger_unavailable"
+
+    events = client.get(f"/v1/transfers/{tid}/events").json()
+    failed_events = [e for e in events if e.get("to_status") == "FAILED"]
+    assert failed_events
+    assert failed_events[-1]["failure_reason"] == "ledger_unavailable"
+
+    filtered = client.get(
+        f"/v1/transfers/{tid}/events",
+        params={"event_type": "TRANSFER_LEDGER_POSTING_FAILED"},
+    )
+    assert filtered.status_code == 200
+    filtered_events = filtered.json()
+    assert len(filtered_events) == 1
+    assert filtered_events[0]["event_type"] == "TRANSFER_LEDGER_POSTING_FAILED"
+    assert filtered_events[0]["failure_reason"] == "ledger_unavailable"
+
+    failed_only = client.get(
+        f"/v1/transfers/{tid}/events",
+        params={"to_status": "FAILED"},
+    )
+    assert failed_only.status_code == 200
+    failed_only_events = failed_only.json()
+    assert failed_only_events
+    assert all(e["to_status"] == "FAILED" for e in failed_only_events)
+
+
+def test_ledger_reversal_failure_forces_failed_and_exposes_reason(monkeypatch) -> None:
+    """When reversal ledger posting fails, transition does not advance to
+    REVERSED and the transfer is marked FAILED with the ledger reason."""
+    monkeypatch.setattr(
+        "app.domain.service.submit_payout",
+        lambda t: {"ok": "true", "reason": "", "external_ref": f"led-fail-rev-{t.transfer_id}"},
+    )
+    monkeypatch.setattr(
+        "app.domain.service.post_transfer_entry",
+        lambda _t: {"ok": "true", "entry_id": "ok-entry"},
+    )
+    monkeypatch.setattr(
+        "app.domain.service.post_reversal_entry",
+        lambda _t: {"ok": "false", "reason": "ledger_reversal_unavailable"},
+    )
+    monkeypatch.setattr("app.domain.service.settings.ledger_posting_enabled", True)
+
+    create = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-led-fail-rev-1",
+            "recipient_phone_e164": "+15551230902",
+            "currency": "USD",
+            "amount_minor": 325,
+            "sender_ledger_account_id": "acct-rev-fail-sender",
+            "transit_ledger_account_id": "acct-rev-fail-transit",
+        },
+        headers={"Idempotency-Key": "led-fail-rev-idem-1"},
+    )
+    tid = create.json()["transfer_id"]
+
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "VALIDATED"})
+    client.post(f"/v1/transfers/{tid}/transition", json={"status": "RESERVED"})
+    submitted = client.post(f"/v1/transfers/{tid}/transition", json={"status": "SUBMITTED_TO_RAIL"})
+    ext = submitted.json()["connector_external_ref"]
+    client.post(
+        "/v1/transfers/callbacks/connector",
+        json={"external_ref": ext, "status": "CONFIRMED"},
+    )
+
+    failed = client.post(
+        f"/v1/transfers/{tid}/transition",
+        json={"status": "REVERSED", "failure_reason": "chargeback_attempt"},
+    )
+    assert failed.status_code == 200
+    assert failed.json()["status"] == "FAILED"
+    assert failed.json()["failure_reason"] == "ledger_reversal_unavailable"
+
+    lookup = client.get(f"/v1/transfers/{tid}")
+    assert lookup.status_code == 200
+    assert lookup.json()["status"] == "FAILED"
+    assert lookup.json()["failure_reason"] == "ledger_reversal_unavailable"
+
+    events = client.get(f"/v1/transfers/{tid}/events").json()
+    failed_events = [e for e in events if e.get("to_status") == "FAILED"]
+    assert failed_events
+    assert failed_events[-1]["failure_reason"] == "ledger_reversal_unavailable"
+
+    filtered = client.get(
+        f"/v1/transfers/{tid}/events",
+        params={"event_type": "TRANSFER_LEDGER_REVERSAL_POSTING_FAILED"},
+    )
+    assert filtered.status_code == 200
+    filtered_events = filtered.json()
+    assert len(filtered_events) == 1
+    assert filtered_events[0]["event_type"] == "TRANSFER_LEDGER_REVERSAL_POSTING_FAILED"
+    assert filtered_events[0]["failure_reason"] == "ledger_reversal_unavailable"
+
+    failed_only = client.get(
+        f"/v1/transfers/{tid}/events",
+        params={"to_status": "FAILED"},
+    )
+    assert failed_only.status_code == 200
+    failed_only_events = failed_only.json()
+    assert failed_only_events
+    assert all(e["to_status"] == "FAILED" for e in failed_only_events)
+
+
+def test_transfer_date_range_filtering() -> None:
+    """Date-range params narrow both transfer list and event timelines."""
+    from datetime import datetime, timedelta, timezone
+
+    before = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+
+    create_resp = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-date-range",
+            "recipient_phone_e164": "+15551230001",
+            "currency": "USD",
+            "amount_minor": 500,
+        },
+        headers={"Idempotency-Key": "transfer-date-range-1"},
+    )
+    assert create_resp.status_code == 201
+    transfer_id = create_resp.json()["transfer_id"]
+
+    after = (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat()
+    far_future = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
+
+    # Filter transfers: range that contains the transfer
+    resp_in = client.get("/v1/transfers", params={
+        "sender_user_id": "u-date-range",
+        "created_at_from": before,
+        "created_at_to": after,
+    })
+    assert resp_in.status_code == 200
+    assert resp_in.json()["count"] == 1
+
+    # Filter transfers: range entirely in the future — should return 0
+    resp_out = client.get("/v1/transfers", params={
+        "sender_user_id": "u-date-range",
+        "created_at_from": after,
+        "created_at_to": far_future,
+    })
+    assert resp_out.status_code == 200
+    assert resp_out.json()["count"] == 0
+
+    # Filter events: range that contains the TRANSFER_CREATED event
+    resp_events_in = client.get(f"/v1/transfers/{transfer_id}/events", params={
+        "created_at_from": before,
+        "created_at_to": after,
+    })
+    assert resp_events_in.status_code == 200
+    assert len(resp_events_in.json()) >= 1
+
+    # Filter events: range entirely in the future — should return 0
+    resp_events_out = client.get(f"/v1/transfers/{transfer_id}/events", params={
+        "created_at_from": after,
+        "created_at_to": far_future,
+    })
+    assert resp_events_out.status_code == 200
+    assert resp_events_out.json() == []
+
+
+def test_transfer_note_can_be_updated_and_cleared() -> None:
+    create_resp = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-note-edit",
+            "recipient_phone_e164": "+15557770001",
+            "currency": "USD",
+            "amount_minor": 515,
+            "note": "initial note",
+        },
+        headers={"Idempotency-Key": "transfer-note-edit-1"},
+    )
+    assert create_resp.status_code == 201
+    transfer_id = create_resp.json()["transfer_id"]
+
+    update_resp = client.patch(
+        f"/v1/transfers/{transfer_id}/note",
+        json={"note": "updated note for support"},
+    )
+    assert update_resp.status_code == 200
+    updated = update_resp.json()
+    assert updated["note"] == "updated note for support"
+
+    lookup_resp = client.get(f"/v1/transfers/{transfer_id}")
+    assert lookup_resp.status_code == 200
+    assert lookup_resp.json()["note"] == "updated note for support"
+
+    clear_resp = client.patch(
+        f"/v1/transfers/{transfer_id}/note",
+        json={"note": "   "},
+    )
+    assert clear_resp.status_code == 200
+    assert clear_resp.json()["note"] is None
+
+
+def test_transfer_list_search_matches_note_and_failure_reason() -> None:
+    note_resp = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-search",
+            "recipient_phone_e164": "+15556660001",
+            "currency": "USD",
+            "amount_minor": 321,
+            "note": "Dinner split with team",
+        },
+        headers={"Idempotency-Key": "transfer-search-note-1"},
+    )
+    assert note_resp.status_code == 201
+
+    failed_resp = client.post(
+        "/v1/transfers",
+        json={
+            "sender_user_id": "u-search",
+            "recipient_phone_e164": "+15556660002",
+            "currency": "USD",
+            "amount_minor": 654,
+        },
+        headers={"Idempotency-Key": "transfer-search-fail-1"},
+    )
+    assert failed_resp.status_code == 201
+    failed_id = failed_resp.json()["transfer_id"]
+
+    fail_transition = client.post(
+        f"/v1/transfers/{failed_id}/transition",
+        json={"status": "FAILED", "failure_reason": "insufficient_liquidity"},
+    )
+    assert fail_transition.status_code == 200
+
+    note_matches = client.get("/v1/transfers", params={"sender_user_id": "u-search", "q": "dinner"})
+    assert note_matches.status_code == 200
+    assert note_matches.json()["count"] == 1
+    assert note_matches.json()["transfers"][0]["note"] == "Dinner split with team"
+
+    failure_matches = client.get("/v1/transfers", params={"sender_user_id": "u-search", "q": "liquidity"})
+    assert failure_matches.status_code == 200
+    assert failure_matches.json()["count"] == 1
+    assert failure_matches.json()["transfers"][0]["failure_reason"] == "insufficient_liquidity"

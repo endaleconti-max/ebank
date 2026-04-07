@@ -15,6 +15,14 @@ class OrchestratorClient:
         async with httpx.AsyncClient(timeout=10.0) as client:
             return await client.get(f"{self.base_url}/v1/transfers/{transfer_id}", headers=headers)
 
+    async def update_transfer_note(self, transfer_id: str, payload: dict, headers: dict) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await client.patch(
+                f"{self.base_url}/v1/transfers/{transfer_id}/note",
+                json=payload,
+                headers=headers,
+            )
+
     async def connector_callback(self, payload: dict, headers: dict) -> httpx.Response:
         async with httpx.AsyncClient(timeout=10.0) as client:
             return await client.post(
@@ -46,10 +54,18 @@ class OrchestratorClient:
                 headers=headers,
             )
 
-    async def list_transfer_events(self, transfer_id: str, headers: dict) -> httpx.Response:
+    async def list_transfer_events(self, transfer_id: str, params: dict, headers: dict) -> httpx.Response:
         async with httpx.AsyncClient(timeout=10.0) as client:
             return await client.get(
                 f"{self.base_url}/v1/transfers/{transfer_id}/events",
+                params=params,
+                headers=headers,
+            )
+
+    async def get_transfer_event_summary(self, transfer_id: str, headers: dict) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await client.get(
+                f"{self.base_url}/v1/transfers/{transfer_id}/events/summary",
                 headers=headers,
             )
 
