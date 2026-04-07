@@ -14,6 +14,7 @@ test("getShortcutAction maps supported alt+shift shortcuts", () => {
   assert.equal(getShortcutAction({ key: "U", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "copy-failed-event-ids");
   assert.equal(getShortcutAction({ key: "S", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "copy-failure-snapshot");
   assert.equal(getShortcutAction({ key: "B", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "download-failure-report");
+  assert.equal(getShortcutAction({ key: "M", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "copy-failure-markdown");
   assert.equal(getShortcutAction({ key: "N", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "sort-events-newest");
   assert.equal(getShortcutAction({ key: "O", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "sort-events-oldest");
   assert.equal(getShortcutAction({ key: "C", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "clear-event-filters");

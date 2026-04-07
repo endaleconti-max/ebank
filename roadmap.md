@@ -242,6 +242,10 @@ Immediate next implementation sequence:
 2. ~~Add inline event shortcut hint text near timeline controls so operators can discover the expanded key bindings without external docs.~~ ✓ Done — added an inline shortcut hint strip in the timeline controls showing core event investigation key combos.
 
 Immediate next implementation sequence:
+1. ~~Add a markdown-formatted failure handoff summary so support teams can paste structured incident context directly into issue trackers and postmortems without reformatting plain text exports.~~ ✓ Done — added `eventFailureMarkdown.js` and `Copy failure markdown` action that copies a markdown summary containing transfer, counts, failure rate, filters, failed IDs, and failed timeline bullets.
+2. ~~Add a keyboard shortcut for markdown failure summary copy to keep high-tempo incident triage fully keyboard-driven.~~ ✓ Done — added `Alt+Shift+M` mapping (`copy-failure-markdown`) with handler wiring and shortcut hint update.
+
+Immediate next implementation sequence:
 1. ~~Add a downloadable failure snapshot report artifact (plain text) so investigators can attach a durable case file to tickets without manual copy-paste and formatting drift.~~ ✓ Done — added `eventFailureReport.js` and `Download failure report` action that exports transfer-scoped failure summary, filter query, failed IDs, and failed timeline rows as `.txt`.
 2. ~~Add a keyboard shortcut for failure report download to keep escalation flow keyboard-first during active incident triage.~~ ✓ Done — added `Alt+Shift+B` mapping (`download-failure-report`) with handler wiring and shortcut hint update.
 
