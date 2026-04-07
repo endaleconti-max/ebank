@@ -319,6 +319,10 @@ p {
   white-space: nowrap;
 }
 
+#registerForm.auth-form label {
+  flex: 1;
+}
+
 label {
   display: flex;
   flex-direction: column;

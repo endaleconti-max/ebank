@@ -53,13 +53,9 @@
           <div class="auth-pill-head">
             <h2 class="auth-pill-title">Register</h2>
           </div>
-          <form id="registerForm" class="form-grid auth-register-grid" novalidate>
-            <label>
-              <input id="regFullName" name="regFullName" placeholder="Full name" aria-label="Full name" required maxlength="140" />
-            </label>
-            <label>
-              <input id="regCountry" name="regCountry" placeholder="Country code" aria-label="Country code" required minlength="2" maxlength="2" />
-            </label>
+          <form id="registerForm" class="auth-form" novalidate>
+            <label><input id="regFullName" name="regFullName" placeholder="Full name" aria-label="Full name" required maxlength="140" /></label>
+            <label><input id="regCountry" name="regCountry" placeholder="Phone number" aria-label="Phone number" required minlength="2" maxlength="2" /></label>
             <button id="registerBtn" class="btn primary" type="submit">Continue</button>
           </form>
           <p class="feedback" id="registerFeedback" role="status" aria-live="polite"></p>
