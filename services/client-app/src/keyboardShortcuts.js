@@ -20,6 +20,7 @@ export function getShortcutAction(event) {
   if (key === "f") return "copy-event-filters";
   if (key === "d") return "copy-event-digest";
   if (key === "y") return "copy-failed-event-digest";
+  if (key === "u") return "copy-failed-event-ids";
   if (key === "n") return "sort-events-newest";
   if (key === "o") return "sort-events-oldest";
   if (key === "c") return "clear-event-filters";

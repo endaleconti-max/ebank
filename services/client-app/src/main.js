@@ -27,6 +27,7 @@ import { buildTransfersCsv } from "./transferExport.js";
 import { buildTransferEventsCsv, buildTransferEventsJson } from "./eventExport.js";
 import { buildTransferEventsDigest } from "./eventDigest.js";
 import { buildFailedEventsDigest, getFailureEvents } from "./eventFailureDigest.js";
+import { buildFailedEventIdsText, formatFailureRateLabel, getFailedEventIds } from "./eventFailureInsights.js";
 import { buildTimelineRows } from "./eventTimelineLayout.js";
 import { buildRollingDateRange } from "./eventDateShortcuts.js";
 import { readStoredEventFilters, writeStoredEventFilters } from "./eventFilterState.js";
@@ -109,6 +110,7 @@ const eventsListEl       = document.getElementById("eventsList");
 const eventSummaryChipsEl = document.getElementById("eventSummaryChips");
 const eventVisibleCountEl = document.getElementById("eventVisibleCount");
 const eventFailedCountEl = document.getElementById("eventFailedCount");
+const eventFailureRateEl = document.getElementById("eventFailureRate");
 const eventTypeFilterEl   = document.getElementById("eventTypeFilter");
 const eventStatusFilterEl = document.getElementById("eventStatusFilter");
 const eventDateFromEl     = document.getElementById("eventDateFrom");
@@ -141,6 +143,7 @@ const exportEventsCsvBtnEl = document.getElementById("exportEventsCsvBtn");
 const exportEventsJsonBtnEl = document.getElementById("exportEventsJsonBtn");
 const copyEventsDigestBtnEl = document.getElementById("copyEventsDigestBtn");
 const copyFailedEventsDigestBtnEl = document.getElementById("copyFailedEventsDigestBtn");
+const copyFailedEventIdsBtnEl = document.getElementById("copyFailedEventIdsBtn");
 
 const refreshListBtn    = document.getElementById("refreshListBtn");
 const applyFiltersBtn   = document.getElementById("applyFiltersBtn");
@@ -348,6 +351,7 @@ function syncEventExportButtons() {
   exportEventsJsonBtnEl.disabled = disabled;
   if (copyEventsDigestBtnEl) copyEventsDigestBtnEl.disabled = disabled;
   if (copyFailedEventsDigestBtnEl) copyFailedEventsDigestBtnEl.disabled = !state.selectedTransferId || !hasFailureEvents;
+  if (copyFailedEventIdsBtnEl) copyFailedEventIdsBtnEl.disabled = !state.selectedTransferId || !hasFailureEvents;
 }
 
 function syncEventRowNavigationButtons() {
@@ -381,6 +385,11 @@ function renderFailedVisibleCount(failedVisibleCount, totalVisibleCount) {
     return;
   }
   eventFailedCountEl.textContent = `${failedVisibleCount} failed shown`;
+}
+
+function renderFailureRateLabel(failedVisibleCount, totalVisibleCount) {
+  if (!eventFailureRateEl) return;
+  eventFailureRateEl.textContent = formatFailureRateLabel(failedVisibleCount, totalVisibleCount);
 }
 
 function applyEventDensity(density) {
@@ -1085,7 +1094,9 @@ function renderEvents(events) {
   syncEventExportButtons();
   syncEventRowNavigationButtons();
   renderEventVisibleCount(filteredEvents.length, (events || []).length);
-  renderFailedVisibleCount(getFailureEvents(filteredEvents).length, filteredEvents.length);
+  const failedCount = getFailureEvents(filteredEvents).length;
+  renderFailedVisibleCount(failedCount, filteredEvents.length);
+  renderFailureRateLabel(failedCount, filteredEvents.length);
 
   if (!filteredEvents.length) {
     const hasFilters = Boolean(
@@ -1475,6 +1486,28 @@ async function copyFailedTransferEventsDigest() {
   }
 }
 
+async function copyFailedEventIds() {
+  if (!state.selectedTransferId) {
+    showToast("Select a transfer before copying failed IDs.", true);
+    return;
+  }
+
+  const visibleEvents = getVisibleTransferEvents();
+  const failedIds = getFailedEventIds(visibleEvents);
+  if (!failedIds.length) {
+    showToast("No failed event IDs to copy.", true);
+    return;
+  }
+
+  try {
+    const text = buildFailedEventIdsText(visibleEvents, state.selectedTransferId);
+    await copyTextToClipboard(text);
+    showToast("Failed event IDs copied.");
+  } catch {
+    showToast("Failed to copy failed event IDs.", true);
+  }
+}
+
 async function copyEventFiltersQuery() {
   const query = buildEventFilterQueryString(state.eventFilters);
   if (!query) {
@@ -1641,6 +1674,7 @@ exportEventsCsvBtnEl.addEventListener("click", () => { exportFilteredTransferEve
 exportEventsJsonBtnEl.addEventListener("click", () => { exportFilteredTransferEvents("json"); });
 copyEventsDigestBtnEl.addEventListener("click", () => { void copyFilteredTransferEventsDigest(); });
 copyFailedEventsDigestBtnEl.addEventListener("click", () => { void copyFailedTransferEventsDigest(); });
+copyFailedEventIdsBtnEl.addEventListener("click", () => { void copyFailedEventIds(); });
 
 [eventTypeFilterEl, eventStatusFilterEl, eventDateFromEl, eventDateToEl].forEach((el) => {
   el.addEventListener("change", () => {
@@ -1685,6 +1719,10 @@ window.addEventListener("keydown", (event) => {
   }
   if (action === "copy-failed-event-digest") {
     void copyFailedTransferEventsDigest();
+    return;
+  }
+  if (action === "copy-failed-event-ids") {
+    void copyFailedEventIds();
     return;
   }
   if (action === "sort-events-newest") {

@@ -231,6 +231,7 @@
             <h3>Events</h3>
             <span id="eventVisibleCount" class="event-count-label">0 shown</span>
             <span id="eventFailedCount" class="event-count-label">0 failed</span>
+            <span id="eventFailureRate" class="event-count-label">Failure rate 0%</span>
             <div class="events-actions">
               <button id="eventDensityComfortableBtn" class="btn ghost" type="button">Comfortable</button>
               <button id="eventDensityCompactBtn" class="btn ghost" type="button">Compact</button>
@@ -247,6 +248,7 @@
               <button id="exportEventsJsonBtn" class="btn ghost" type="button">Export JSON</button>
               <button id="copyEventsDigestBtn" class="btn ghost" type="button">Copy digest</button>
               <button id="copyFailedEventsDigestBtn" class="btn ghost" type="button">Copy failed digest</button>
+              <button id="copyFailedEventIdsBtn" class="btn ghost" type="button">Copy failed IDs</button>
             </div>
             <div class="events-filters">
               <select id="eventTypeFilter" aria-label="Filter events by type">
@@ -279,7 +281,7 @@
             </div>
             <div id="eventActiveFilters" class="event-active-filters hidden"></div>
             <p class="event-shortcut-hint" aria-label="Event keyboard shortcuts">
-              Shortcuts: Alt+Shift+C clear filters, Alt+Shift+X failed only, Alt+Shift+F copy filters, Alt+Shift+D copy digest, Alt+Shift+Y copy failed digest, Alt+Shift+J/K prev/next event, Alt+Shift+Q/W prev/next failed
+              Shortcuts: Alt+Shift+C clear filters, Alt+Shift+X failed only, Alt+Shift+F copy filters, Alt+Shift+D copy digest, Alt+Shift+Y copy failed digest, Alt+Shift+U copy failed IDs, Alt+Shift+J/K prev/next event, Alt+Shift+Q/W prev/next failed
             </p>
           </div>
           <div class="shortcut-row shortcut-row-compact">

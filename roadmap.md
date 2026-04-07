@@ -242,6 +242,10 @@ Immediate next implementation sequence:
 2. ~~Add inline event shortcut hint text near timeline controls so operators can discover the expanded key bindings without external docs.~~ ✓ Done — added an inline shortcut hint strip in the timeline controls showing core event investigation key combos.
 
 Immediate next implementation sequence:
+1. ~~Add an inline failure-rate indicator in the timeline toolbar so investigators can quantify incident concentration at a glance under the current filtered/sorted event scope.~~ ✓ Done — added `eventFailureRate` label (`Failure rate X%`) recalculated on each event render from visible failed vs visible total events.
+2. ~~Add one-click copy of failed event IDs for rapid escalation handoff (ticket titles, incident chats, and runbook references) without manual row scanning.~~ ✓ Done — added `Copy failed IDs` action and `Alt+Shift+U` shortcut, backed by `eventFailureInsights.js` (`getFailedEventIds`, `buildFailedEventIdsText`) and unit tests.
+
+Immediate next implementation sequence:
 1. ~~Add verification lifecycle timestamping in alias-service so successful OTP verification records include a durable `verified_at` audit field for downstream support/compliance workflows.~~ ✓ Done — `PhoneVerification` now persists nullable `verified_at`, verify flow sets it on first successful OTP match, and `/v1/aliases/verify-phone` returns it in `VerifyPhoneResponse`.
 2. ~~Expand alias domain status taxonomy with explicit `VERIFIED` state so the model reflects pre-bind lifecycle semantics and future policy routing without enum churn.~~ ✓ Done — `AliasStatus` now includes `VERIFIED`; API test coverage added for `verified_at` lifecycle (`test_verify_phone_sets_verified_at_on_success`) and alias-service suite remains green.
 
