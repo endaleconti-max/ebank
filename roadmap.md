@@ -242,6 +242,10 @@ Immediate next implementation sequence:
 2. ~~Add inline event shortcut hint text near timeline controls so operators can discover the expanded key bindings without external docs.~~ ✓ Done — added an inline shortcut hint strip in the timeline controls showing core event investigation key combos.
 
 Immediate next implementation sequence:
+1. ~~Add a copyable failure snapshot artifact (counts, rate, failed IDs, and active filter query) so incident handoff can be pasted into tickets and chat without manual assembly.~~ ✓ Done — added `eventFailureSnapshot.js` and `Copy failure snapshot` action that copies transfer-scoped visible-event counts, failed counts, failure rate, failed IDs, and filter query string.
+2. ~~Add a keyboard shortcut for failure snapshot copy to reduce friction during active investigations where support operators stay on keyboard.~~ ✓ Done — added `Alt+Shift+S` mapping (`copy-failure-snapshot`) with handler wiring and updated inline shortcut hint.
+
+Immediate next implementation sequence:
 1. ~~Add an inline failure-rate indicator in the timeline toolbar so investigators can quantify incident concentration at a glance under the current filtered/sorted event scope.~~ ✓ Done — added `eventFailureRate` label (`Failure rate X%`) recalculated on each event render from visible failed vs visible total events.
 2. ~~Add one-click copy of failed event IDs for rapid escalation handoff (ticket titles, incident chats, and runbook references) without manual row scanning.~~ ✓ Done — added `Copy failed IDs` action and `Alt+Shift+U` shortcut, backed by `eventFailureInsights.js` (`getFailedEventIds`, `buildFailedEventIdsText`) and unit tests.
 
