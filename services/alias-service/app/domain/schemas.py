@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -47,12 +47,42 @@ class AliasResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    unbound_at: Optional[datetime] = None
+    unbound_reason: Optional[str] = None
+    recycled_from_user_id: Optional[str] = None
+    recycled_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
 
+class AliasHistoryResponse(BaseModel):
+    phone_e164: str
+    total: int
+    aliases: List[AliasResponse]
+
+
+class ResolveAuditEntry(BaseModel):
+    log_id: str
+    phone_e164: str
+    caller_id: Optional[str] = None
+    result_found: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ResolveAuditResponse(BaseModel):
+    phone_e164: str
+    total: int
+    entries: List[ResolveAuditEntry]
+
+
 class UnbindAliasRequest(BaseModel):
     reason_code: str
+
+
+class UpdateDiscoverableRequest(BaseModel):
+    discoverable: bool
 
 
 class ResolveAliasResponse(BaseModel):

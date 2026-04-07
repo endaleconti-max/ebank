@@ -37,8 +37,8 @@ import { readStoredEventFilters, writeStoredEventFilters } from "./eventFilterSt
 import { buildActiveEventFilterChips, buildEventFilterQueryString } from "./eventFilterShare.js";
 import { isFailedOnlyEnabled, toggleFailedOnlyStatus } from "./eventFilterModes.js";
 import { buildUrlWithEventFilters, readEventFiltersFromSearch } from "./eventFilterUrlState.js";
-import { buildEventRowDetailHtml, buildEventRowCopyText } from "./eventRowDetail.js";
-import { getAdjacentEventId, getAdjacentFailureEventId, isFailureEvent } from "./eventRowNavigation.js";
+import { buildEventRowDetailHtml, buildEventRowCopyText, buildExpandedEventCopyText } from "./eventRowDetail.js";
+import { getAdjacentEventId, getAdjacentFailureEventId, getBoundaryEventId, getBoundaryFailureEventId, isFailureEvent } from "./eventRowNavigation.js";
 
 // ── DOM refs ─────────────────────────────────────────
 const gatewayStatusEl   = document.getElementById("gatewayStatus");
@@ -137,8 +137,14 @@ const eventSortOldestBtnEl = document.getElementById("eventSortOldestBtn");
 const eventSortNewestBtnEl = document.getElementById("eventSortNewestBtn");
 const eventExpandPrevBtnEl = document.getElementById("eventExpandPrevBtn");
 const eventExpandNextBtnEl = document.getElementById("eventExpandNextBtn");
+const eventExpandFirstBtnEl = document.getElementById("eventExpandFirstBtn");
+const eventExpandLastBtnEl = document.getElementById("eventExpandLastBtn");
+const failureExpandFirstBtnEl = document.getElementById("failureExpandFirstBtn");
+const failureExpandLastBtnEl = document.getElementById("failureExpandLastBtn");
+const collapseExpandedEventBtnEl = document.getElementById("collapseExpandedEventBtn");
 const eventFailurePrevBtnEl = document.getElementById("eventFailurePrevBtn");
 const eventFailureNextBtnEl = document.getElementById("eventFailureNextBtn");
+const copyExpandedEventBtnEl = document.getElementById("copyExpandedEventBtn");
 const eventFailedOnlyToggleBtnEl = document.getElementById("eventFailedOnlyToggleBtn");
 const eventAutoApplyBtnEl = document.getElementById("eventAutoApplyBtn");
 const copyEventFiltersBtnEl = document.getElementById("copyEventFiltersBtn");
@@ -372,10 +378,18 @@ function syncEventRowNavigationButtons() {
     .filter(Boolean);
   const disabled = !state.selectedTransferId || visibleEventIds.length === 0;
   const failedDisabled = !state.selectedTransferId || failedVisibleEventIds.length === 0;
+  const collapseDisabled = !state.selectedTransferId || !state.expandedEventId || !visibleEventIds.includes(String(state.expandedEventId));
+  const expandedDisabled = !state.selectedTransferId || !state.expandedEventId || !visibleEventIds.includes(String(state.expandedEventId));
   if (eventExpandPrevBtnEl) eventExpandPrevBtnEl.disabled = disabled;
   if (eventExpandNextBtnEl) eventExpandNextBtnEl.disabled = disabled;
+  if (eventExpandFirstBtnEl) eventExpandFirstBtnEl.disabled = disabled;
+  if (eventExpandLastBtnEl) eventExpandLastBtnEl.disabled = disabled;
   if (eventFailurePrevBtnEl) eventFailurePrevBtnEl.disabled = failedDisabled;
   if (eventFailureNextBtnEl) eventFailureNextBtnEl.disabled = failedDisabled;
+  if (failureExpandFirstBtnEl) failureExpandFirstBtnEl.disabled = failedDisabled;
+  if (failureExpandLastBtnEl) failureExpandLastBtnEl.disabled = failedDisabled;
+  if (collapseExpandedEventBtnEl) collapseExpandedEventBtnEl.disabled = collapseDisabled;
+  if (copyExpandedEventBtnEl) copyExpandedEventBtnEl.disabled = expandedDisabled;
 }
 
 function renderEventVisibleCount(visibleCount, totalCount) {
@@ -1199,6 +1213,42 @@ function navigateFailureEvent(direction) {
   }
 }
 
+function navigateToBoundaryEvent(edge) {
+  const visibleEventIds = getVisibleTransferEvents()
+    .map((event) => String(event.event_id || ""))
+    .filter(Boolean);
+  const targetEventId = getBoundaryEventId(visibleEventIds, edge);
+  if (!targetEventId) {
+    showToast("No visible events to navigate.", true);
+    return;
+  }
+
+  state.expandedEventId = targetEventId;
+  renderEvents(state.transferEvents);
+
+  const rowEl = eventsListEl.querySelector(`li[data-event-id="${targetEventId}"]`);
+  if (rowEl) {
+    rowEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function navigateToBoundaryFailureEvent(edge) {
+  const visibleEvents = getVisibleTransferEvents();
+  const targetEventId = getBoundaryFailureEventId(visibleEvents, edge);
+  if (!targetEventId) {
+    showToast("No failed events in current view.", true);
+    return;
+  }
+
+  state.expandedEventId = targetEventId;
+  renderEvents(state.transferEvents);
+
+  const rowEl = eventsListEl.querySelector(`li[data-event-id="${targetEventId}"]`);
+  if (rowEl) {
+    rowEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
 function renderEventSummary(summary) {
   if (!eventSummaryChipsEl) return;
   eventSummaryChipsEl.innerHTML = "";
@@ -1592,6 +1642,45 @@ async function copyFailureMarkdownSummary() {
   }
 }
 
+async function copyExpandedEvent() {
+  if (!state.selectedTransferId) {
+    showToast("Select a transfer before copying event details.", true);
+    return;
+  }
+  if (!state.expandedEventId) {
+    showToast("Expand an event row first.", true);
+    return;
+  }
+
+  const text = buildExpandedEventCopyText(getVisibleTransferEvents(), state.expandedEventId);
+  if (!text) {
+    showToast("Expanded event is not visible in current filters.", true);
+    return;
+  }
+
+  try {
+    await copyTextToClipboard(text);
+    showToast("Expanded event copied.");
+  } catch {
+    showToast("Failed to copy expanded event.", true);
+  }
+}
+
+function collapseExpandedEvent() {
+  if (!state.selectedTransferId) {
+    showToast("Select a transfer before collapsing event details.", true);
+    return;
+  }
+  if (!state.expandedEventId) {
+    showToast("No expanded event to collapse.", true);
+    return;
+  }
+
+  state.expandedEventId = null;
+  renderEvents(state.transferEvents);
+  showToast("Expanded event collapsed.");
+}
+
 async function copyEventFiltersQuery() {
   const query = buildEventFilterQueryString(state.eventFilters);
   if (!query) {
@@ -1749,8 +1838,14 @@ eventSortNewestBtnEl.addEventListener("click", () => {
 });
 eventExpandPrevBtnEl.addEventListener("click", () => { navigateExpandedEvent("previous"); });
 eventExpandNextBtnEl.addEventListener("click", () => { navigateExpandedEvent("next"); });
+eventExpandFirstBtnEl.addEventListener("click", () => { navigateToBoundaryEvent("first"); });
+eventExpandLastBtnEl.addEventListener("click", () => { navigateToBoundaryEvent("last"); });
+if (failureExpandFirstBtnEl) failureExpandFirstBtnEl.addEventListener("click", () => { navigateToBoundaryFailureEvent("first"); });
+if (failureExpandLastBtnEl) failureExpandLastBtnEl.addEventListener("click", () => { navigateToBoundaryFailureEvent("last"); });
+collapseExpandedEventBtnEl.addEventListener("click", collapseExpandedEvent);
 eventFailurePrevBtnEl.addEventListener("click", () => { navigateFailureEvent("previous"); });
 eventFailureNextBtnEl.addEventListener("click", () => { navigateFailureEvent("next"); });
+copyExpandedEventBtnEl.addEventListener("click", () => { void copyExpandedEvent(); });
 eventFailedOnlyToggleBtnEl.addEventListener("click", () => { toggleFailedOnlyEvents(); });
 eventAutoApplyBtnEl.addEventListener("click", () => { applyEventAutoApply(!state.eventAutoApply); });
 copyEventFiltersBtnEl.addEventListener("click", () => { void copyEventFiltersQuery(); });
@@ -1842,12 +1937,36 @@ window.addEventListener("keydown", (event) => {
     toggleFailedOnlyEvents();
     return;
   }
+  if (action === "copy-expanded-event") {
+    void copyExpandedEvent();
+    return;
+  }
+  if (action === "collapse-expanded-event") {
+    collapseExpandedEvent();
+    return;
+  }
   if (action === "event-expand-previous") {
     navigateExpandedEvent("previous");
     return;
   }
   if (action === "event-expand-next") {
     navigateExpandedEvent("next");
+    return;
+  }
+  if (action === "event-expand-first") {
+    navigateToBoundaryEvent("first");
+    return;
+  }
+  if (action === "event-expand-last") {
+    navigateToBoundaryEvent("last");
+    return;
+  }
+  if (action === "failure-expand-first") {
+    navigateToBoundaryFailureEvent("first");
+    return;
+  }
+  if (action === "failure-expand-last") {
+    navigateToBoundaryFailureEvent("last");
     return;
   }
   if (action === "event-failure-previous") {

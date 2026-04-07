@@ -1,17 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.domain.errors import (
     AliasAlreadyBoundError,
+    AliasMustBeBoundError,
     AliasNotFoundError,
     PhoneNotVerifiedError,
     VerificationNotFoundError,
 )
 from app.domain.schemas import (
+    AliasHistoryResponse,
     AliasResponse,
     BindAliasRequest,
     ResolveAliasResponse,
+    ResolveAuditResponse,
     UnbindAliasRequest,
+    UpdateDiscoverableRequest,
     VerifyPhoneRequest,
     VerifyPhoneResponse,
 )
@@ -55,12 +59,48 @@ def unbind_alias(alias_id: str, payload: UnbindAliasRequest, db: Session = Depen
     return alias
 
 
+@router.patch("/v1/aliases/{alias_id}/discoverable", response_model=AliasResponse)
+def update_discoverable(alias_id: str, payload: UpdateDiscoverableRequest, db: Session = Depends(get_db)):
+    try:
+        alias = _svc.update_discoverable(db, alias_id, payload)
+    except AliasNotFoundError:
+        raise HTTPException(status_code=404, detail="Alias not found")
+    except AliasMustBeBoundError:
+        raise HTTPException(status_code=409, detail="Alias must be BOUND to update discoverability")
+    return alias
+
+
 @router.get("/v1/aliases/resolve", response_model=ResolveAliasResponse)
-def resolve_alias(phone_e164: str, db: Session = Depends(get_db)):
-    alias = _svc.resolve_alias(db, phone_e164)
+def resolve_alias(request: Request, phone_e164: str, db: Session = Depends(get_db)):
+    caller_id = request.headers.get("X-Caller-Id")
+    alias = _svc.resolve_alias(db, phone_e164, caller_id=caller_id)
     if alias is None:
         return ResolveAliasResponse(found=False)
     return ResolveAliasResponse(found=True, alias=alias)
+
+
+@router.get("/v1/aliases/audit/resolve", response_model=ResolveAuditResponse)
+def get_resolve_audit(
+    phone_e164: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    entries = _svc.get_resolve_audit(db, phone_e164, limit=limit)
+    return ResolveAuditResponse(phone_e164=phone_e164, total=len(entries), entries=entries)
+
+
+@router.get("/v1/aliases/{alias_id}", response_model=AliasResponse)
+def get_alias(alias_id: str, db: Session = Depends(get_db)):
+    alias = _svc.get_alias_by_id(db, alias_id)
+    if alias is None:
+        raise HTTPException(status_code=404, detail="Alias not found")
+    return alias
+
+
+@router.get("/v1/aliases/history/{phone_e164:path}", response_model=AliasHistoryResponse)
+def get_alias_history(phone_e164: str, db: Session = Depends(get_db)):
+    aliases = _svc.get_alias_history(db, phone_e164)
+    return AliasHistoryResponse(phone_e164=phone_e164, total=len(aliases), aliases=aliases)
 
 
 @router.get("/v1/healthz", status_code=204)

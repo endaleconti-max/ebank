@@ -26,6 +26,18 @@ export function getAdjacentEventId(eventIds, currentEventId, direction) {
 }
 
 /**
+ * Returns the first or last event ID from currently visible ordered IDs.
+ * @param {string[]} eventIds
+ * @param {"first"|"last"} edge
+ * @returns {string|null}
+ */
+export function getBoundaryEventId(eventIds, edge) {
+  const ids = normalizeEventIds(eventIds);
+  if (!ids.length) return null;
+  return edge === "last" ? ids[ids.length - 1] : ids[0];
+}
+
+/**
  * Checks whether an event is failure-related for investigation stepping.
  * @param {object} event
  * @returns {boolean}
@@ -48,6 +60,19 @@ export function getAdjacentFailureEventId(events, currentEventId, direction) {
     ? events.filter((event) => isFailureEvent(event)).map((event) => event?.event_id)
     : [];
   return getAdjacentEventId(failureIds, currentEventId, direction);
+}
+
+/**
+ * Returns the first or last failure event ID from currently visible ordered events.
+ * @param {Array<object>} events
+ * @param {"first"|"last"} edge
+ * @returns {string|null}
+ */
+export function getBoundaryFailureEventId(events, edge) {
+  const failureIds = Array.isArray(events)
+    ? events.filter((event) => isFailureEvent(event)).map((event) => event?.event_id)
+    : [];
+  return getBoundaryEventId(failureIds, edge);
 }
 
 function normalizeEventIds(eventIds) {

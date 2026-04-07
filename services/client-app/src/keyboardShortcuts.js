@@ -28,6 +28,12 @@ export function getShortcutAction(event) {
   if (key === "o") return "sort-events-oldest";
   if (key === "c") return "clear-event-filters";
   if (key === "x") return "toggle-event-failed-only";
+  if (key === "e") return "copy-expanded-event";
+  if (key === "z") return "collapse-expanded-event";
+  if (key === "a") return "event-expand-first";
+  if (key === "g") return "event-expand-last";
+  if (key === "h") return "failure-expand-first";
+  if (key === "t") return "failure-expand-last";
   if (key === "j") return "event-expand-previous";
   if (key === "k") return "event-expand-next";
   if (key === "q") return "event-failure-previous";

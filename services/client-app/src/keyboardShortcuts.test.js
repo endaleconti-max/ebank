@@ -19,6 +19,12 @@ test("getShortcutAction maps supported alt+shift shortcuts", () => {
   assert.equal(getShortcutAction({ key: "O", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "sort-events-oldest");
   assert.equal(getShortcutAction({ key: "C", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "clear-event-filters");
   assert.equal(getShortcutAction({ key: "X", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "toggle-event-failed-only");
+  assert.equal(getShortcutAction({ key: "E", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "copy-expanded-event");
+  assert.equal(getShortcutAction({ key: "Z", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "collapse-expanded-event");
+  assert.equal(getShortcutAction({ key: "A", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "event-expand-first");
+  assert.equal(getShortcutAction({ key: "G", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "event-expand-last");
+  assert.equal(getShortcutAction({ key: "H", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "failure-expand-first");
+  assert.equal(getShortcutAction({ key: "T", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "failure-expand-last");
   assert.equal(getShortcutAction({ key: "J", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "event-expand-previous");
   assert.equal(getShortcutAction({ key: "K", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "event-expand-next");
   assert.equal(getShortcutAction({ key: "Q", altKey: true, shiftKey: true, metaKey: false, ctrlKey: false, target: { tagName: "DIV" } }), "event-failure-previous");

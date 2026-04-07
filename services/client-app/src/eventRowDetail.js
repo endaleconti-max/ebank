@@ -54,3 +54,16 @@ export function buildEventRowCopyText(event) {
 
   return parts.join(" | ");
 }
+
+/**
+ * Build copy text for the currently expanded event in the visible list.
+ * @param {object[]} events - Visible timeline events.
+ * @param {string|null} expandedEventId - Currently expanded event id.
+ * @returns {string} Copyable summary text for expanded event, or empty string.
+ */
+export function buildExpandedEventCopyText(events, expandedEventId) {
+  if (!expandedEventId) return "";
+  const expanded = (events || []).find((event) => String(event.event_id || "") === String(expandedEventId));
+  if (!expanded) return "";
+  return buildEventRowCopyText(expanded);
+}

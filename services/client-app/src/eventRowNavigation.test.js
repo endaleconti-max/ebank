@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   getAdjacentEventId,
+  getBoundaryEventId,
+  getBoundaryFailureEventId,
   getAdjacentFailureEventId,
   isFailureEvent,
 } from "./eventRowNavigation.js";
@@ -29,6 +31,26 @@ test("getAdjacentEventId falls back when current id is not visible", () => {
   const ids = ["evt-1", "evt-2"];
   assert.equal(getAdjacentEventId(ids, "evt-missing", "next"), "evt-1");
   assert.equal(getAdjacentEventId(ids, "evt-missing", "previous"), "evt-2");
+});
+
+test("getBoundaryEventId returns first/last visible ID", () => {
+  const ids = ["evt-1", "evt-2", "evt-3"];
+  assert.equal(getBoundaryEventId(ids, "first"), "evt-1");
+  assert.equal(getBoundaryEventId(ids, "last"), "evt-3");
+  assert.equal(getBoundaryEventId([], "first"), null);
+});
+
+test("getBoundaryFailureEventId returns first/last failure event ID", () => {
+  const events = [
+    { event_id: "evt-1", to_status: "CREATED", event_type: "TRANSFER_CREATED" },
+    { event_id: "evt-2", to_status: "FAILED", event_type: "TRANSFER_STATUS_TRANSITIONED" },
+    { event_id: "evt-3", to_status: "SETTLED", event_type: "TRANSFER_STATUS_TRANSITIONED" },
+    { event_id: "evt-4", event_type: "TRANSFER_CONNECTOR_CALLBACK_FAILED" },
+  ];
+  assert.equal(getBoundaryFailureEventId(events, "first"), "evt-2");
+  assert.equal(getBoundaryFailureEventId(events, "last"), "evt-4");
+  assert.equal(getBoundaryFailureEventId([], "first"), null);
+  assert.equal(getBoundaryFailureEventId([{ event_id: "e1", to_status: "CREATED" }], "first"), null);
 });
 
 test("isFailureEvent detects failure by status, type, or reason", () => {

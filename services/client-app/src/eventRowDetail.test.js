@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildEventRowDetailHtml, buildEventRowCopyText } from "./eventRowDetail.js";
+import { buildEventRowDetailHtml, buildEventRowCopyText, buildExpandedEventCopyText } from "./eventRowDetail.js";
 
 describe("buildEventRowDetailHtml", () => {
   it("renders all available fields as a detail grid", () => {
@@ -66,5 +66,25 @@ describe("buildEventRowCopyText", () => {
     };
     const text = buildEventRowCopyText(event);
     assert.ok(text.includes("Reason: ledger_error"), "should include failure reason");
+  });
+});
+
+describe("buildExpandedEventCopyText", () => {
+  it("returns copy text for the expanded event id", () => {
+    const text = buildExpandedEventCopyText(
+      [
+        { event_id: "evt-1", event_type: "TRANSFER_CREATED", to_status: "CREATED", created_at: "2026-04-07T10:00:00Z" },
+        { event_id: "evt-2", event_type: "TRANSFER_STATUS_TRANSITIONED", to_status: "FAILED", failure_reason: "timeout", created_at: "2026-04-07T10:01:00Z" },
+      ],
+      "evt-2",
+    );
+
+    assert.ok(text.includes("Event ID: evt-2"));
+    assert.ok(text.includes("Reason: timeout"));
+  });
+
+  it("returns empty string when no expanded id or no matching event exists", () => {
+    assert.equal(buildExpandedEventCopyText([{ event_id: "evt-1" }], null), "");
+    assert.equal(buildExpandedEventCopyText([{ event_id: "evt-1" }], "evt-9"), "");
   });
 });

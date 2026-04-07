@@ -12,3 +12,7 @@ class AliasNotFoundError(Exception):
 
 class VerificationNotFoundError(Exception):
     pass
+
+
+class AliasMustBeBoundError(Exception):
+    pass

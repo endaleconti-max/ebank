@@ -279,7 +279,32 @@ Immediate next implementation sequence:
 1. ~~Sync active event filters into URL query params so current investigation scope remains shareable and browser-refresh safe.~~ ✓ Done — event filter state now updates URL params (`evType`, `evStatus`, `evFrom`, `evTo`, `evQ`) on each filter apply while preserving existing query params.
 2. ~~Restore event filters from URL on boot (overriding stored local filters when present) so shared links reopen exact timeline scope reliably.~~ ✓ Done — added URL filter parsing on startup and precedence over localStorage filters when URL filter params are present.
 
-## 1. Vision
+Immediate next implementation sequence:
+1. ~~Add `PATCH /v1/aliases/{alias_id}/discoverable` endpoint to the alias-service so users can toggle alias discoverability without unbinding, enabling privacy-safe alias discovery controls (Epic C2).~~ ✓ Done — added `UpdateDiscoverableRequest` schema, `update_discoverable()` service method, `AliasMustBeBoundError`, and `PATCH /v1/aliases/{alias_id}/discoverable` route; returns 404 for unknown alias, 409 for non-BOUND alias.
+2. ~~Add durable unbind audit fields (`unbound_at`, `unbound_reason`) to the `Alias` model so every unbind operation has a compliance-ready timestamp and reason code for downstream support and audit workflows (Epic C3).~~ ✓ Done — `unbound_at` and `unbound_reason` persisted on `Alias` during `unbind_alias()`, exposed in `AliasResponse`; 4 new API tests added; alias-service suite green: 7 tests passing.
+
+Immediate next implementation sequence:
+1. ~~Add a timeline action to copy the currently expanded event detail so investigators can capture full per-event context without aiming for the tiny row-level copy icon during rapid triage.~~ ✓ Done — added `Copy expanded event` toolbar action wired to the currently expanded visible event and guarded with clear empty-state toasts when no row is expanded.
+2. ~~Add a keyboard shortcut for expanded-event copy so event-by-event investigations stay keyboard-first after navigation (`J/K`, `Q/W`).~~ ✓ Done — added `Alt+Shift+E` mapping (`copy-expanded-event`), handler wiring, updated shortcut hint text, and helper/test coverage (`buildExpandedEventCopyText`); client suite green: 68 tests passing.
+
+Immediate next implementation sequence:
+1. ~~Add a timeline toolbar action to collapse the currently expanded event detail so investigators can quickly reset row focus after stepping through events.~~ ✓ Done — added `Collapse event` action that clears the expanded row in-place with guardrails for no-transfer/no-expanded states.
+2. ~~Add a keyboard shortcut for collapse (`Alt+Shift+Z`) so investigators can keep event navigation and detail toggling fully keyboard-driven.~~ ✓ Done — added `collapse-expanded-event` shortcut mapping and handler wiring, updated inline shortcut hint, and extended shortcut tests; client suite remains green: 68 tests passing.
+
+Immediate next implementation sequence:
+1. ~~Add timeline actions to jump directly to the first visible event and the most recent visible event so investigators can anchor quickly at the start or end of long filtered timelines.~~ ✓ Done — added `First event` and `Latest event` toolbar actions that expand and scroll to boundary events in the current visible ordering.
+2. ~~Add keyboard shortcuts for boundary event jumps so investigators can move to timeline anchors without pointer travel.~~ ✓ Done — added `Alt+Shift+A` (`event-expand-first`) and `Alt+Shift+G` (`event-expand-last`) mappings, handler wiring, and shortcut-hint updates; added `getBoundaryEventId()` helper + tests; client suite green: 69 tests passing.
+3. ~~Add toolbar actions and keyboard shortcuts to jump directly to the first or latest failure event so investigators can skip to the fault boundary without scrolling.~~ ✓ Done — added `First failed` and `Latest failed` toolbar buttons, `Alt+Shift+H` (`failure-expand-first`) and `Alt+Shift+T` (`failure-expand-last`) mappings, `getBoundaryFailureEventId()` helper + 4 tests, full `main.js` wiring (DOM refs, sync, action function, listeners, dispatch); client suite green: 70 tests passing.
+
+Immediate next implementation sequence:
+1. ~~Add recycled-number detection to `bind_alias` so that when a phone number is rebound to a different user after being unbound, the new alias row records `recycled_from_user_id` and `recycled_at` for durable compliance audit (Epic C3).~~ ✓ Done — `bind_alias` now queries the most recent UNBOUND alias for the phone; if its `user_id` differs from the incoming request, the new `Alias` row is stamped with `recycled_from_user_id` and `recycled_at`; same-user rebind produces no recycled fields.
+2. ~~Add `GET /v1/aliases/history/{phone_e164}` endpoint returning the full chronological binding history for a phone number so compliance teams can audit the complete owner chain and detect recycled-number scenarios before initiating transfers.~~ ✓ Done — added `get_alias_history()` service method, `AliasHistoryResponse` schema (`phone_e164`, `total`, `aliases[]`), and `GET /v1/aliases/history/{phone_e164}` route; 5 new tests covering same-user rebind, different-user rebind, ordered history, empty phone, and single binding; alias-service suite green: 12 tests passing.
+
+Immediate next implementation sequence:
+1. ~~Add `GET /v1/aliases/{alias_id}` direct alias fetch endpoint so compliance and support tooling can retrieve an alias record by ID without requiring a phone number or full history scan.~~ ✓ Done — added `get_alias_by_id()` service method and `GET /v1/aliases/{alias_id}` route; returns 404 for unknown IDs.
+2. ~~Add `ResolveAuditLog` model and `GET /v1/aliases/audit/resolve` endpoint so every alias resolve call is durably recorded (phone, caller identity, result_found, timestamp) and queryable for anti-enumeration monitoring (Epic C2).~~ ✓ Done — `ResolveAuditLog` table persists one row per resolve call; `resolve_alias()` accepts and logs `X-Caller-Id` header; `GET /v1/aliases/audit/resolve?phone_e164=&limit=` returns pageable audit entries; `ResolveAuditEntry` + `ResolveAuditResponse` schemas added; 5 new tests covering direct lookup 200/404, audit entry with caller, not-found audit, and limit param; alias-service suite green: 17 tests passing.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives
