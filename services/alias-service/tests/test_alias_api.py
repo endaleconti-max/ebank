@@ -136,6 +136,32 @@ def test_resolve_ignores_bound_alias_when_discoverable_is_false() -> None:
     assert resolve_resp.json()["found"] is False
 
 
+def test_internal_resolve_can_return_undiscoverable_alias() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-internal", "discoverable": False},
+    )
+    assert bind_resp.status_code == 201
+
+    resolve_resp = client.get(
+        "/v1/aliases/resolve/internal",
+        params={"phone_e164": PHONE, "purpose": "support-review"},
+        headers={"X-Caller-Id": "svc-support"},
+    )
+    assert resolve_resp.status_code == 200
+    assert resolve_resp.json()["found"] is True
+    assert resolve_resp.json()["alias"]["discoverable"] is False
+
+
+def test_internal_resolve_requires_caller_id_header() -> None:
+    resp = client.get(
+        "/v1/aliases/resolve/internal",
+        params={"phone_e164": PHONE, "purpose": "support-review"},
+    )
+    assert resp.status_code == 422
+
+
 def test_get_alias_by_id_still_returns_undiscoverable_alias() -> None:
     verification_id = _do_two_step_verify()
     bind_resp = client.post(
@@ -588,6 +614,43 @@ def test_resolve_audit_filters_by_caller_id() -> None:
     assert body["caller_id"] == "svc-alpha"
     assert body["total"] == 1
     assert body["entries"][0]["caller_id"] == "svc-alpha"
+
+
+def test_resolve_audit_filters_by_lookup_scope() -> None:
+    verification_id = _do_two_step_verify()
+    client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-scope", "discoverable": False},
+    )
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": PHONE},
+        headers={"X-Caller-Id": "svc-scope"},
+    )
+    client.get(
+        "/v1/aliases/resolve/internal",
+        params={"phone_e164": PHONE, "purpose": "compliance-review"},
+        headers={"X-Caller-Id": "svc-scope"},
+    )
+
+    audit = client.get(
+        "/v1/aliases/audit/resolve",
+        params={"caller_id": "svc-scope", "lookup_scope": "INTERNAL"},
+    )
+    assert audit.status_code == 200
+    body = audit.json()
+    assert body["lookup_scope"] == "INTERNAL"
+    assert body["total"] == 1
+    assert body["entries"][0]["lookup_scope"] == "INTERNAL"
+    assert body["entries"][0]["purpose"] == "compliance-review"
+
+
+def test_resolve_audit_rejects_invalid_lookup_scope() -> None:
+    resp = client.get(
+        "/v1/aliases/audit/resolve",
+        params={"caller_id": "svc-bad-scope", "lookup_scope": "BROKEN"},
+    )
+    assert resp.status_code == 422
 
 
 def test_resolve_audit_window_minutes_excludes_old_entries() -> None:

@@ -90,26 +90,57 @@ def resolve_alias(request: Request, phone_e164: str, db: Session = Depends(get_d
     return ResolveAliasResponse(found=True, alias=alias)
 
 
+@router.get("/v1/aliases/resolve/internal", response_model=ResolveAliasResponse)
+def resolve_alias_internal(
+    request: Request,
+    phone_e164: str,
+    purpose: str,
+    include_undiscoverable: bool = True,
+    db: Session = Depends(get_db),
+):
+    caller_id = request.headers.get("X-Caller-Id")
+    if not caller_id:
+        raise HTTPException(status_code=422, detail="X-Caller-Id header is required")
+    try:
+        alias = _svc.resolve_alias_internal(
+            db,
+            phone_e164,
+            caller_id=caller_id,
+            purpose=purpose,
+            include_undiscoverable=include_undiscoverable,
+        )
+    except ResolveLookupRateLimitedError:
+        raise HTTPException(status_code=429, detail="Resolve lookup rate limit exceeded")
+    if alias is None:
+        return ResolveAliasResponse(found=False)
+    return ResolveAliasResponse(found=True, alias=alias)
+
+
 @router.get("/v1/aliases/audit/resolve", response_model=ResolveAuditResponse)
 def get_resolve_audit(
     phone_e164: Optional[str] = None,
     caller_id: Optional[str] = None,
+    lookup_scope: Optional[str] = Query(default=None),
     window_minutes: Optional[int] = Query(default=None, ge=1, le=1440),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     if not phone_e164 and not caller_id:
         raise HTTPException(status_code=422, detail="phone_e164 or caller_id is required")
+    if lookup_scope is not None and lookup_scope not in {"PUBLIC", "INTERNAL"}:
+        raise HTTPException(status_code=422, detail="Invalid lookup scope filter")
     entries = _svc.query_resolve_audit(
         db,
         phone_e164=phone_e164,
         caller_id=caller_id,
+        lookup_scope=lookup_scope,
         window_minutes=window_minutes,
         limit=limit,
     )
     return ResolveAuditResponse(
         phone_e164=phone_e164,
         caller_id=caller_id,
+        lookup_scope=lookup_scope,
         window_minutes=window_minutes,
         total=len(entries),
         entries=entries,

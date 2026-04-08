@@ -78,6 +78,8 @@ class ResolveAuditEntry(BaseModel):
     log_id: str
     phone_e164: str
     caller_id: Optional[str] = None
+    lookup_scope: str
+    purpose: Optional[str] = None
     result_found: bool
     blocked: bool
     created_at: datetime
@@ -88,6 +90,7 @@ class ResolveAuditEntry(BaseModel):
 class ResolveAuditResponse(BaseModel):
     phone_e164: Optional[str] = None
     caller_id: Optional[str] = None
+    lookup_scope: Optional[str] = None
     window_minutes: Optional[int] = None
     total: int
     entries: List[ResolveAuditEntry]

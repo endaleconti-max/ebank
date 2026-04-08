@@ -120,6 +120,41 @@ class AliasService:
         return alias
 
     def resolve_alias(self, db: Session, phone_e164: str, caller_id: Optional[str] = None) -> Optional[Alias]:
+        return self._resolve_alias(
+            db,
+            phone_e164,
+            caller_id=caller_id,
+            include_undiscoverable=False,
+            lookup_scope="PUBLIC",
+            purpose=None,
+        )
+
+    def resolve_alias_internal(
+        self,
+        db: Session,
+        phone_e164: str,
+        caller_id: str,
+        purpose: str,
+        include_undiscoverable: bool = True,
+    ) -> Optional[Alias]:
+        return self._resolve_alias(
+            db,
+            phone_e164,
+            caller_id=caller_id,
+            include_undiscoverable=include_undiscoverable,
+            lookup_scope="INTERNAL",
+            purpose=purpose,
+        )
+
+    def _resolve_alias(
+        self,
+        db: Session,
+        phone_e164: str,
+        caller_id: Optional[str],
+        include_undiscoverable: bool,
+        lookup_scope: str,
+        purpose: Optional[str],
+    ) -> Optional[Alias]:
         caller_key = caller_id or "anonymous"
         window_start = datetime.now(timezone.utc) - timedelta(minutes=self.RESOLVE_FAILURE_WINDOW_MINUTES)
         recent_failed_count = (
@@ -137,6 +172,8 @@ class AliasService:
                 ResolveAuditLog(
                     phone_e164=phone_e164,
                     caller_id=caller_key,
+                    lookup_scope=lookup_scope,
+                    purpose=purpose,
                     result_found=False,
                     blocked=True,
                 )
@@ -144,18 +181,18 @@ class AliasService:
             db.commit()
             raise ResolveLookupRateLimitedError(caller_key)
 
-        alias = (
-            db.query(Alias)
-            .filter(
-                Alias.phone_e164 == phone_e164,
-                Alias.status == AliasStatus.BOUND,
-                Alias.discoverable.is_(True),
-            )
-            .first()
+        query = db.query(Alias).filter(
+            Alias.phone_e164 == phone_e164,
+            Alias.status == AliasStatus.BOUND,
         )
+        if not include_undiscoverable:
+            query = query.filter(Alias.discoverable.is_(True))
+        alias = query.first()
         log_entry = ResolveAuditLog(
             phone_e164=phone_e164,
             caller_id=caller_key,
+            lookup_scope=lookup_scope,
+            purpose=purpose,
             result_found=alias is not None,
             blocked=False,
         )
@@ -174,6 +211,7 @@ class AliasService:
         db: Session,
         phone_e164: Optional[str] = None,
         caller_id: Optional[str] = None,
+        lookup_scope: Optional[str] = None,
         window_minutes: Optional[int] = None,
         limit: int = 100,
     ) -> List[ResolveAuditLog]:
@@ -182,6 +220,8 @@ class AliasService:
             query = query.filter(ResolveAuditLog.phone_e164 == phone_e164)
         if caller_id:
             query = query.filter(ResolveAuditLog.caller_id == caller_id)
+        if lookup_scope:
+            query = query.filter(ResolveAuditLog.lookup_scope == lookup_scope)
         if window_minutes is not None:
             window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
             query = query.filter(ResolveAuditLog.created_at >= window_start)

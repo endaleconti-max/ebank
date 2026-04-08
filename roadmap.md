@@ -321,6 +321,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/undiscoverable` endpoint so support/compliance can list currently hidden bound aliases, optionally filtered by `user_id`, without bypassing privacy through the public resolve flow.~~ ✓ Done — added undiscoverable alias listing ordered by latest update time with `user_id` and `limit` filters; tests cover public resolve privacy, direct fetch of hidden aliases, and undiscoverable listing/filter behavior.
 
 Immediate next implementation sequence:
+1. ~~Add an internal alias resolve path that can intentionally return undiscoverable aliases for support/compliance workflows, while still requiring explicit caller identity and purpose metadata for auditability (Epic C2).~~ ✓ Done — added `GET /v1/aliases/resolve/internal` requiring `X-Caller-Id` and `purpose`; internal resolve can include hidden aliases without weakening the public resolve path.
+2. ~~Extend resolve-audit records and filtering with lookup scope/purpose so investigators can distinguish public lookups from internal support/compliance access when reviewing alias-resolution activity.~~ ✓ Done — `ResolveAuditLog` now stores `lookup_scope` and `purpose`; audit responses expose both fields and `GET /v1/aliases/audit/resolve` supports `lookup_scope=PUBLIC|INTERNAL` filtering with 422 validation for invalid values.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives
