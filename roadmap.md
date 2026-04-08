@@ -309,6 +309,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/audit/resolve/summary` so operations can inspect aggregate resolve behavior per caller (`total`, `found`, `not_found`, `blocked`) without manually scanning raw audit rows.~~ ✓ Done — added `ResolveAuditSummaryResponse`, blocked flag on `ResolveAuditLog`, and summary aggregation by caller ID; anti-enumeration coverage added for named callers, anonymous callers, safe successful lookups, and summary counts.
 
 Immediate next implementation sequence:
+1. ~~Add caller and time-window filters to `GET /v1/aliases/audit/resolve` so compliance and anti-enumeration tooling can inspect recent lookup activity without scanning the full audit table or only querying by phone.~~ ✓ Done — raw resolve audit now supports `caller_id` and `window_minutes` filters, returns applied filters in the response, and rejects unscoped queries unless `phone_e164` or `caller_id` is provided.
+2. ~~Add `GET /v1/aliases/audit/resolve/callers` recent-caller leaderboard endpoint so operators can quickly identify the busiest or most-blocked lookup sources over a rolling window.~~ ✓ Done — added per-caller recent aggregation (`total`, `found`, `not_found`, `blocked`, `latest_at`) with `window_minutes`, `limit`, and `blocked_only` filters; tests cover caller filtering, old-entry exclusion, leaderboard membership, and blocked-only output.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives

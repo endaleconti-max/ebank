@@ -16,6 +16,7 @@ from app.domain.schemas import (
     AliasResponse,
     BindAliasRequest,
     ResolveAliasResponse,
+    ResolveCallerAuditSummaryListResponse,
     ResolveAuditResponse,
     ResolveAuditSummaryResponse,
     UnbindAliasRequest,
@@ -88,12 +89,28 @@ def resolve_alias(request: Request, phone_e164: str, db: Session = Depends(get_d
 
 @router.get("/v1/aliases/audit/resolve", response_model=ResolveAuditResponse)
 def get_resolve_audit(
-    phone_e164: str,
+    phone_e164: Optional[str] = None,
+    caller_id: Optional[str] = None,
+    window_minutes: Optional[int] = Query(default=None, ge=1, le=1440),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
-    entries = _svc.get_resolve_audit(db, phone_e164, limit=limit)
-    return ResolveAuditResponse(phone_e164=phone_e164, total=len(entries), entries=entries)
+    if not phone_e164 and not caller_id:
+        raise HTTPException(status_code=422, detail="phone_e164 or caller_id is required")
+    entries = _svc.query_resolve_audit(
+        db,
+        phone_e164=phone_e164,
+        caller_id=caller_id,
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return ResolveAuditResponse(
+        phone_e164=phone_e164,
+        caller_id=caller_id,
+        window_minutes=window_minutes,
+        total=len(entries),
+        entries=entries,
+    )
 
 
 @router.get("/v1/aliases/audit/resolve/summary", response_model=ResolveAuditSummaryResponse)
@@ -102,6 +119,26 @@ def get_resolve_audit_summary(
     db: Session = Depends(get_db),
 ):
     return _svc.get_resolve_audit_summary(db, caller_id=caller_id)
+
+
+@router.get("/v1/aliases/audit/resolve/callers", response_model=ResolveCallerAuditSummaryListResponse)
+def list_resolve_audit_callers(
+    window_minutes: int = Query(default=60, ge=1, le=1440),
+    limit: int = Query(default=50, ge=1, le=500),
+    blocked_only: bool = False,
+    db: Session = Depends(get_db),
+):
+    callers = _svc.list_resolve_audit_summaries(
+        db,
+        window_minutes=window_minutes,
+        limit=limit,
+        blocked_only=blocked_only,
+    )
+    return ResolveCallerAuditSummaryListResponse(
+        total_callers=len(callers),
+        window_minutes=window_minutes,
+        callers=callers,
+    )
 
 
 @router.get("/v1/aliases/{alias_id}", response_model=AliasResponse)

@@ -1,7 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.domain.models import ResolveAuditLog
 from app.infrastructure.db import Base, engine
+from app.infrastructure.db import SessionLocal
 from app.main import app
 
 client = TestClient(app)
@@ -409,3 +411,110 @@ def test_resolve_audit_summary_counts_found_not_found_and_blocked() -> None:
     assert body["found"] == 1
     assert body["not_found"] == 3
     assert body["blocked"] == 1
+
+
+def test_resolve_audit_requires_phone_or_caller_filter() -> None:
+    resp = client.get("/v1/aliases/audit/resolve")
+    assert resp.status_code == 422
+
+
+def test_resolve_audit_filters_by_caller_id() -> None:
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000111"},
+        headers={"X-Caller-Id": "svc-alpha"},
+    )
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000111"},
+        headers={"X-Caller-Id": "svc-beta"},
+    )
+
+    audit = client.get(
+        "/v1/aliases/audit/resolve",
+        params={"caller_id": "svc-alpha", "limit": 10},
+    )
+    assert audit.status_code == 200
+    body = audit.json()
+    assert body["caller_id"] == "svc-alpha"
+    assert body["total"] == 1
+    assert body["entries"][0]["caller_id"] == "svc-alpha"
+
+
+def test_resolve_audit_window_minutes_excludes_old_entries() -> None:
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000112"},
+        headers={"X-Caller-Id": "svc-window"},
+    )
+    with SessionLocal() as db:
+        entry = db.query(ResolveAuditLog).filter(ResolveAuditLog.caller_id == "svc-window").first()
+        entry.created_at = entry.created_at.replace(year=entry.created_at.year - 1)
+        db.commit()
+
+    recent = client.get(
+        "/v1/aliases/audit/resolve",
+        params={"caller_id": "svc-window", "window_minutes": 60},
+    )
+    assert recent.status_code == 200
+    body = recent.json()
+    assert body["total"] == 0
+
+
+def test_resolve_callers_summary_lists_recent_callers() -> None:
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000121"},
+        headers={"X-Caller-Id": "svc-list-a"},
+    )
+    for _ in range(3):
+        client.get(
+            "/v1/aliases/resolve",
+            params={"phone_e164": "+19990000122"},
+            headers={"X-Caller-Id": "svc-list-b"},
+        )
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000123"},
+        headers={"X-Caller-Id": "svc-list-b"},
+    )
+
+    summary = client.get(
+        "/v1/aliases/audit/resolve/callers",
+        params={"window_minutes": 60, "limit": 10},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["total_callers"] >= 2
+    caller_ids = [entry["caller_id"] for entry in body["callers"]]
+    assert "svc-list-a" in caller_ids
+    assert "svc-list-b" in caller_ids
+
+
+def test_resolve_callers_summary_blocked_only_filters_non_blocked_callers() -> None:
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000131"},
+        headers={"X-Caller-Id": "svc-clean"},
+    )
+    for _ in range(3):
+        client.get(
+            "/v1/aliases/resolve",
+            params={"phone_e164": "+19990000132"},
+            headers={"X-Caller-Id": "svc-block-only"},
+        )
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000133"},
+        headers={"X-Caller-Id": "svc-block-only"},
+    )
+
+    summary = client.get(
+        "/v1/aliases/audit/resolve/callers",
+        params={"window_minutes": 60, "blocked_only": True},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    caller_ids = [entry["caller_id"] for entry in body["callers"]]
+    assert "svc-block-only" in caller_ids
+    assert "svc-clean" not in caller_ids

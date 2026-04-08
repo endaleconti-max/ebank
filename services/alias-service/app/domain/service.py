@@ -166,13 +166,25 @@ class AliasService:
         return db.query(Alias).filter(Alias.alias_id == alias_id).first()
 
     def get_resolve_audit(self, db: Session, phone_e164: str, limit: int = 100) -> List[ResolveAuditLog]:
-        return (
-            db.query(ResolveAuditLog)
-            .filter(ResolveAuditLog.phone_e164 == phone_e164)
-            .order_by(ResolveAuditLog.created_at.desc())
-            .limit(limit)
-            .all()
-        )
+        return self.query_resolve_audit(db, phone_e164=phone_e164, limit=limit)
+
+    def query_resolve_audit(
+        self,
+        db: Session,
+        phone_e164: Optional[str] = None,
+        caller_id: Optional[str] = None,
+        window_minutes: Optional[int] = None,
+        limit: int = 100,
+    ) -> List[ResolveAuditLog]:
+        query = db.query(ResolveAuditLog)
+        if phone_e164:
+            query = query.filter(ResolveAuditLog.phone_e164 == phone_e164)
+        if caller_id:
+            query = query.filter(ResolveAuditLog.caller_id == caller_id)
+        if window_minutes is not None:
+            window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+            query = query.filter(ResolveAuditLog.created_at >= window_start)
+        return query.order_by(ResolveAuditLog.created_at.desc()).limit(limit).all()
 
     def get_resolve_audit_summary(self, db: Session, caller_id: Optional[str] = None) -> dict:
         caller_key = caller_id or "anonymous"
@@ -192,6 +204,58 @@ class AliasService:
             "not_found": not_found,
             "blocked": blocked,
         }
+
+    def list_resolve_audit_summaries(
+        self,
+        db: Session,
+        window_minutes: int = 60,
+        limit: int = 50,
+        blocked_only: bool = False,
+    ) -> List[dict]:
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+        entries = (
+            db.query(ResolveAuditLog)
+            .filter(ResolveAuditLog.created_at >= window_start)
+            .order_by(ResolveAuditLog.created_at.desc())
+            .all()
+        )
+        by_caller = {}
+        for entry in entries:
+            caller_key = entry.caller_id or "anonymous"
+            stats = by_caller.setdefault(
+                caller_key,
+                {
+                    "caller_id": caller_key,
+                    "total": 0,
+                    "found": 0,
+                    "not_found": 0,
+                    "blocked": 0,
+                    "latest_at": None,
+                },
+            )
+            stats["total"] += 1
+            if entry.blocked:
+                stats["blocked"] += 1
+            elif entry.result_found:
+                stats["found"] += 1
+            else:
+                stats["not_found"] += 1
+            if stats["latest_at"] is None or entry.created_at > stats["latest_at"]:
+                stats["latest_at"] = entry.created_at
+
+        summaries = list(by_caller.values())
+        if blocked_only:
+            summaries = [summary for summary in summaries if summary["blocked"] > 0]
+        summaries.sort(
+            key=lambda summary: (
+                summary["blocked"],
+                summary["not_found"],
+                summary["total"],
+                summary["caller_id"],
+            ),
+            reverse=True,
+        )
+        return summaries[:limit]
 
     def get_alias_history(self, db: Session, phone_e164: str) -> List[Alias]:
         return (

@@ -73,7 +73,9 @@ class ResolveAuditEntry(BaseModel):
 
 
 class ResolveAuditResponse(BaseModel):
-    phone_e164: str
+    phone_e164: Optional[str] = None
+    caller_id: Optional[str] = None
+    window_minutes: Optional[int] = None
     total: int
     entries: List[ResolveAuditEntry]
 
@@ -84,6 +86,21 @@ class ResolveAuditSummaryResponse(BaseModel):
     found: int
     not_found: int
     blocked: int
+
+
+class ResolveCallerAuditSummaryEntry(BaseModel):
+    caller_id: str
+    total: int
+    found: int
+    not_found: int
+    blocked: int
+    latest_at: Optional[datetime] = None
+
+
+class ResolveCallerAuditSummaryListResponse(BaseModel):
+    total_callers: int
+    window_minutes: int
+    callers: List[ResolveCallerAuditSummaryEntry]
 
 
 class UnbindAliasRequest(BaseModel):
