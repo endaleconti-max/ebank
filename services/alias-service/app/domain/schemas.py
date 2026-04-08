@@ -57,6 +57,13 @@ class AliasResponse(BaseModel):
 
 class AliasHistoryResponse(BaseModel):
     phone_e164: str
+    status: Optional[str] = None
+    total: int
+    aliases: List[AliasResponse]
+
+
+class RecycledAliasListResponse(BaseModel):
+    user_id: Optional[str] = None
     total: int
     aliases: List[AliasResponse]
 

@@ -257,10 +257,24 @@ class AliasService:
         )
         return summaries[:limit]
 
-    def get_alias_history(self, db: Session, phone_e164: str) -> List[Alias]:
-        return (
-            db.query(Alias)
-            .filter(Alias.phone_e164 == phone_e164)
-            .order_by(Alias.created_at)
-            .all()
-        )
+    def get_alias_history(
+        self,
+        db: Session,
+        phone_e164: str,
+        status: Optional[AliasStatus] = None,
+    ) -> List[Alias]:
+        query = db.query(Alias).filter(Alias.phone_e164 == phone_e164)
+        if status is not None:
+            query = query.filter(Alias.status == status)
+        return query.order_by(Alias.created_at).all()
+
+    def list_recycled_aliases(
+        self,
+        db: Session,
+        user_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Alias]:
+        query = db.query(Alias).filter(Alias.recycled_at.is_not(None))
+        if user_id:
+            query = query.filter(Alias.user_id == user_id)
+        return query.order_by(Alias.recycled_at.desc()).limit(limit).all()

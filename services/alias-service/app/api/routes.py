@@ -13,6 +13,7 @@ from app.domain.errors import (
 )
 from app.domain.schemas import (
     AliasHistoryResponse,
+    RecycledAliasListResponse,
     AliasResponse,
     BindAliasRequest,
     ResolveAliasResponse,
@@ -25,6 +26,7 @@ from app.domain.schemas import (
     VerifyPhoneResponse,
 )
 from app.domain.service import AliasService
+from app.domain.models import AliasStatus
 from app.infrastructure.db import get_db
 
 router = APIRouter()
@@ -141,6 +143,16 @@ def list_resolve_audit_callers(
     )
 
 
+@router.get("/v1/aliases/recycled", response_model=RecycledAliasListResponse)
+def list_recycled_aliases(
+    user_id: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    aliases = _svc.list_recycled_aliases(db, user_id=user_id, limit=limit)
+    return RecycledAliasListResponse(user_id=user_id, total=len(aliases), aliases=aliases)
+
+
 @router.get("/v1/aliases/{alias_id}", response_model=AliasResponse)
 def get_alias(alias_id: str, db: Session = Depends(get_db)):
     alias = _svc.get_alias_by_id(db, alias_id)
@@ -150,9 +162,19 @@ def get_alias(alias_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/v1/aliases/history/{phone_e164:path}", response_model=AliasHistoryResponse)
-def get_alias_history(phone_e164: str, db: Session = Depends(get_db)):
-    aliases = _svc.get_alias_history(db, phone_e164)
-    return AliasHistoryResponse(phone_e164=phone_e164, total=len(aliases), aliases=aliases)
+def get_alias_history(
+    phone_e164: str,
+    status: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    alias_status = None
+    if status is not None:
+        try:
+            alias_status = AliasStatus(status)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid alias status filter")
+    aliases = _svc.get_alias_history(db, phone_e164, status=alias_status)
+    return AliasHistoryResponse(phone_e164=phone_e164, status=status, total=len(aliases), aliases=aliases)
 
 
 @router.get("/v1/healthz", status_code=204)

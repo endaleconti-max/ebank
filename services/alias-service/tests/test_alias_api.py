@@ -250,6 +250,97 @@ def test_alias_history_single_binding() -> None:
     assert body["aliases"][0]["user_id"] == "u-single"
 
 
+def test_alias_history_filters_by_status() -> None:
+    verification_id = _do_two_step_verify()
+    first_bind = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-filter-a"},
+    )
+    alias_id = first_bind.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "rotate"})
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    verify2 = client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify2.json()["verification_id"], "user_id": "u-filter-b"},
+    )
+
+    bound_hist = client.get(f"/v1/aliases/history/{PHONE}", params={"status": "BOUND"})
+    assert bound_hist.status_code == 200
+    bound_body = bound_hist.json()
+    assert bound_body["status"] == "BOUND"
+    assert bound_body["total"] == 1
+    assert bound_body["aliases"][0]["user_id"] == "u-filter-b"
+
+    unbound_hist = client.get(f"/v1/aliases/history/{PHONE}", params={"status": "UNBOUND"})
+    assert unbound_hist.status_code == 200
+    unbound_body = unbound_hist.json()
+    assert unbound_body["status"] == "UNBOUND"
+    assert unbound_body["total"] == 1
+    assert unbound_body["aliases"][0]["user_id"] == "u-filter-a"
+
+
+def test_alias_history_invalid_status_returns_422() -> None:
+    resp = client.get(f"/v1/aliases/history/{PHONE}", params={"status": "BROKEN"})
+    assert resp.status_code == 422
+
+
+def test_list_recycled_aliases_returns_only_recycled_bindings() -> None:
+    verification_id = _do_two_step_verify()
+    first_bind = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-recycle-a"},
+    )
+    alias_id = first_bind.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "reassign"})
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    verify2 = client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify2.json()["verification_id"], "user_id": "u-recycle-b"},
+    )
+
+    verification_id_other = _do_two_step_verify()
+    client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id_other, "user_id": "u-plain"},
+    )
+
+    recycled = client.get("/v1/aliases/recycled")
+    assert recycled.status_code == 200
+    body = recycled.json()
+    assert body["total"] == 1
+    assert body["aliases"][0]["user_id"] == "u-recycle-b"
+    assert body["aliases"][0]["recycled_from_user_id"] == "u-recycle-a"
+
+
+def test_list_recycled_aliases_filters_by_user_id_and_limit() -> None:
+    verification_id = _do_two_step_verify()
+    first_bind = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-limit-a"},
+    )
+    alias_id = first_bind.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "move"})
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    verify2 = client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify2.json()["verification_id"], "user_id": "u-target"},
+    )
+
+    filtered = client.get("/v1/aliases/recycled", params={"user_id": "u-target", "limit": 1})
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert body["user_id"] == "u-target"
+    assert body["total"] == 1
+    assert len(body["aliases"]) == 1
+    assert body["aliases"][0]["user_id"] == "u-target"
+
+
 def test_get_alias_by_id_returns_alias() -> None:
     verification_id = _do_two_step_verify()
     bind_resp = client.post(

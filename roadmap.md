@@ -313,6 +313,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/audit/resolve/callers` recent-caller leaderboard endpoint so operators can quickly identify the busiest or most-blocked lookup sources over a rolling window.~~ ✓ Done — added per-caller recent aggregation (`total`, `found`, `not_found`, `blocked`, `latest_at`) with `window_minutes`, `limit`, and `blocked_only` filters; tests cover caller filtering, old-entry exclusion, leaderboard membership, and blocked-only output.
 
 Immediate next implementation sequence:
+1. ~~Add `status` filtering to `GET /v1/aliases/history/{phone_e164}` so support and compliance teams can isolate only active (`BOUND`) or released (`UNBOUND`) bindings when reviewing a number’s ownership chain.~~ ✓ Done — history endpoint now accepts `status=BOUND|UNBOUND|VERIFIED`, validates invalid values with a stable 422, and echoes the applied status filter in the response.
+2. ~~Add `GET /v1/aliases/recycled` endpoint so teams can list recycled-number bindings directly, optionally filtered by current `user_id`, without scanning individual phone histories one by one.~~ ✓ Done — added recycled binding listing ordered by latest recycle timestamp with `user_id` and `limit` filters; tests cover recycled-only output, user filtering, and limit behavior.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives
