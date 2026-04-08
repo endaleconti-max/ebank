@@ -1,17 +1,67 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/services/identity-service/.venv/bin/python",
-  "python.pythonPath": "${workspaceFolder}/services/identity-service/.venv/bin/python",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv-contract/bin/python",
+  "python.pythonPath": "${workspaceFolder}/.venv-contract/bin/python",
   "python.analysis.extraPaths": [
-    "${workspaceFolder}/services/identity-service",
-    "${workspaceFolder}/services/alias-service",
-    "${workspaceFolder}/services/ledger-service",
-    "${workspaceFolder}/services/payment-orchestrator",
-    "${workspaceFolder}/services/connector-gateway",
-    "${workspaceFolder}/services/reconciliation-service"
+    "${workspaceFolder}/tests/contract"
+  ],
+  "python.analysis.executionEnvironments": [
+    {
+      "root": "${workspaceFolder}/services/identity-service",
+      "extraPaths": [
+        "${workspaceFolder}/services/identity-service"
+      ]
+    },
+    {
+      "root": "${workspaceFolder}/services/alias-service",
+      "extraPaths": [
+        "${workspaceFolder}/services/alias-service"
+      ]
+    },
+    {
+      "root": "${workspaceFolder}/services/ledger-service",
+      "extraPaths": [
+        "${workspaceFolder}/services/ledger-service"
+      ]
+    },
+    {
+      "root": "${workspaceFolder}/services/payment-orchestrator",
+      "extraPaths": [
+        "${workspaceFolder}/services/payment-orchestrator"
+      ]
+    },
+    {
+      "root": "${workspaceFolder}/services/api-gateway",
+      "extraPaths": [
+        "${workspaceFolder}/services/api-gateway",
+        "${workspaceFolder}/services/payment-orchestrator"
+      ]
+    },
+    {
+      "root": "${workspaceFolder}/services/connector-gateway",
+      "extraPaths": [
+        "${workspaceFolder}/services/connector-gateway"
+      ]
+    },
+    {
+      "root": "${workspaceFolder}/services/reconciliation-service",
+      "extraPaths": [
+        "${workspaceFolder}/services/reconciliation-service"
+      ]
+    },
+    {
+      "root": "${workspaceFolder}/tests/contract",
+      "extraPaths": [
+        "${workspaceFolder}/services/identity-service",
+        "${workspaceFolder}/services/alias-service",
+        "${workspaceFolder}/services/ledger-service",
+        "${workspaceFolder}/services/payment-orchestrator",
+        "${workspaceFolder}/services/api-gateway",
+        "${workspaceFolder}/services/connector-gateway",
+        "${workspaceFolder}/services/reconciliation-service"
+      ]
+    }
   ],
   "python.analysis.typeCheckingMode": "off",
-  "python.analysis.reportMissingImports": "none",
-  "python.analysis.reportMissingModuleSource": "none",
   "gitdoc.enabled": true,
   "gitdoc.commitDelay": 10000,
   "gitdoc.autoPush": "onCommit",

@@ -1,0 +1,66 @@
+{
+  "venvPath": ".",
+  "venv": ".venv-contract",
+  "typeCheckingMode": "off",
+  "include": [
+    "services",
+    "tests/contract"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "services/identity-service",
+      "extraPaths": [
+        "services/identity-service"
+      ]
+    },
+    {
+      "root": "services/alias-service",
+      "extraPaths": [
+        "services/alias-service"
+      ]
+    },
+    {
+      "root": "services/ledger-service",
+      "extraPaths": [
+        "services/ledger-service"
+      ]
+    },
+    {
+      "root": "services/payment-orchestrator",
+      "extraPaths": [
+        "services/payment-orchestrator"
+      ]
+    },
+    {
+      "root": "services/api-gateway",
+      "extraPaths": [
+        "services/api-gateway",
+        "services/payment-orchestrator"
+      ]
+    },
+    {
+      "root": "services/connector-gateway",
+      "extraPaths": [
+        "services/connector-gateway"
+      ]
+    },
+    {
+      "root": "services/reconciliation-service",
+      "extraPaths": [
+        "services/reconciliation-service"
+      ]
+    },
+    {
+      "root": "tests/contract",
+      "extraPaths": [
+        "services/identity-service",
+        "services/alias-service",
+        "services/ledger-service",
+        "services/payment-orchestrator",
+        "services/api-gateway",
+        "services/connector-gateway",
+        "services/reconciliation-service"
+      ]
+    }
+  ]
+}

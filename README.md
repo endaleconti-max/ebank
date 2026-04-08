@@ -34,10 +34,17 @@ docker compose -f infra/docker-compose.dev.yml up -d
 2. Add contract assertions for event emission on transfer state transitions.
 
 ## Contract Test Suite
-Run from project root using the Python 3.9 service environment:
+Create a repo-local test environment once:
 
 ```bash
-services/identity-service/.venv/bin/pytest tests/contract/ -v
+python3 -m venv .venv-contract
+.venv-contract/bin/pip install -r requirements-contract.txt
+```
+
+Then run from project root:
+
+```bash
+.venv-contract/bin/pytest tests/contract/ -v
 ```
 
 ## Customer Client App

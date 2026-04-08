@@ -7,7 +7,12 @@ that span more than one service boundary.
 
 Run from the project root with the identity-service venv:
 
-    services/identity-service/.venv/bin/pytest tests/contract/ -v
+    .venv-contract/bin/pytest tests/contract/ -v
+
+Environment requirements
+------------------------
+The repo-local contract-test environment must include the shared dependencies
+used across all in-process services (see requirements-contract.txt).
 
 How module isolation works
 --------------------------
