@@ -149,6 +149,7 @@ class AliasService:
             .filter(
                 Alias.phone_e164 == phone_e164,
                 Alias.status == AliasStatus.BOUND,
+                Alias.discoverable.is_(True),
             )
             .first()
         )
@@ -278,3 +279,17 @@ class AliasService:
         if user_id:
             query = query.filter(Alias.user_id == user_id)
         return query.order_by(Alias.recycled_at.desc()).limit(limit).all()
+
+    def list_undiscoverable_aliases(
+        self,
+        db: Session,
+        user_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Alias]:
+        query = db.query(Alias).filter(
+            Alias.status == AliasStatus.BOUND,
+            Alias.discoverable.is_(False),
+        )
+        if user_id:
+            query = query.filter(Alias.user_id == user_id)
+        return query.order_by(Alias.updated_at.desc()).limit(limit).all()

@@ -68,6 +68,12 @@ class RecycledAliasListResponse(BaseModel):
     aliases: List[AliasResponse]
 
 
+class UndiscoverableAliasListResponse(BaseModel):
+    user_id: Optional[str] = None
+    total: int
+    aliases: List[AliasResponse]
+
+
 class ResolveAuditEntry(BaseModel):
     log_id: str
     phone_e164: str

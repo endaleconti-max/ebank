@@ -123,6 +123,32 @@ def test_update_discoverable_toggles_bound_alias() -> None:
     assert on_resp.json()["discoverable"] is True
 
 
+def test_resolve_ignores_bound_alias_when_discoverable_is_false() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-private", "discoverable": False},
+    )
+    assert bind_resp.status_code == 201
+
+    resolve_resp = client.get("/v1/aliases/resolve", params={"phone_e164": PHONE})
+    assert resolve_resp.status_code == 200
+    assert resolve_resp.json()["found"] is False
+
+
+def test_get_alias_by_id_still_returns_undiscoverable_alias() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-private-id", "discoverable": False},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+
+    resp = client.get(f"/v1/aliases/{alias_id}")
+    assert resp.status_code == 200
+    assert resp.json()["discoverable"] is False
+
+
 def test_update_discoverable_returns_404_for_unknown_alias() -> None:
     resp = client.patch(
         "/v1/aliases/nonexistent-id/discoverable",
@@ -339,6 +365,38 @@ def test_list_recycled_aliases_filters_by_user_id_and_limit() -> None:
     assert body["total"] == 1
     assert len(body["aliases"]) == 1
     assert body["aliases"][0]["user_id"] == "u-target"
+
+
+def test_list_undiscoverable_aliases_returns_only_bound_hidden_aliases() -> None:
+    verification_id = _do_two_step_verify()
+    hidden_bind = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-hidden-a", "discoverable": False},
+    )
+    assert hidden_bind.status_code == 201
+
+    hidden_list = client.get("/v1/aliases/undiscoverable")
+    assert hidden_list.status_code == 200
+    body = hidden_list.json()
+    assert body["total"] == 1
+    assert body["aliases"][0]["user_id"] == "u-hidden-a"
+    assert body["aliases"][0]["discoverable"] is False
+
+
+def test_list_undiscoverable_aliases_filters_by_user_id() -> None:
+    verification_id = _do_two_step_verify()
+    client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-hidden-target", "discoverable": False},
+    )
+
+    filtered = client.get("/v1/aliases/undiscoverable", params={"user_id": "u-hidden-target", "limit": 1})
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert body["user_id"] == "u-hidden-target"
+    assert body["total"] == 1
+    assert len(body["aliases"]) == 1
+    assert body["aliases"][0]["user_id"] == "u-hidden-target"
 
 
 def test_get_alias_by_id_returns_alias() -> None:

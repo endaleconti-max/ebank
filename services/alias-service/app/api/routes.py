@@ -20,6 +20,7 @@ from app.domain.schemas import (
     ResolveCallerAuditSummaryListResponse,
     ResolveAuditResponse,
     ResolveAuditSummaryResponse,
+    UndiscoverableAliasListResponse,
     UnbindAliasRequest,
     UpdateDiscoverableRequest,
     VerifyPhoneRequest,
@@ -151,6 +152,16 @@ def list_recycled_aliases(
 ):
     aliases = _svc.list_recycled_aliases(db, user_id=user_id, limit=limit)
     return RecycledAliasListResponse(user_id=user_id, total=len(aliases), aliases=aliases)
+
+
+@router.get("/v1/aliases/undiscoverable", response_model=UndiscoverableAliasListResponse)
+def list_undiscoverable_aliases(
+    user_id: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    aliases = _svc.list_undiscoverable_aliases(db, user_id=user_id, limit=limit)
+    return UndiscoverableAliasListResponse(user_id=user_id, total=len(aliases), aliases=aliases)
 
 
 @router.get("/v1/aliases/{alias_id}", response_model=AliasResponse)

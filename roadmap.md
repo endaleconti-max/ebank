@@ -317,6 +317,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/recycled` endpoint so teams can list recycled-number bindings directly, optionally filtered by current `user_id`, without scanning individual phone histories one by one.~~ ✓ Done — added recycled binding listing ordered by latest recycle timestamp with `user_id` and `limit` filters; tests cover recycled-only output, user filtering, and limit behavior.
 
 Immediate next implementation sequence:
+1. ~~Enforce `discoverable=false` in `GET /v1/aliases/resolve` so public alias lookup respects the privacy control instead of returning any bound alias regardless of discoverability (Epic C2).~~ ✓ Done — public resolve now only returns aliases with `status=BOUND` and `discoverable=true`; hidden aliases remain invisible to public lookups while still being audit-logged as misses.
+2. ~~Add `GET /v1/aliases/undiscoverable` endpoint so support/compliance can list currently hidden bound aliases, optionally filtered by `user_id`, without bypassing privacy through the public resolve flow.~~ ✓ Done — added undiscoverable alias listing ordered by latest update time with `user_id` and `limit` filters; tests cover public resolve privacy, direct fetch of hidden aliases, and undiscoverable listing/filter behavior.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives
