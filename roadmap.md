@@ -305,6 +305,10 @@ Immediate next implementation sequence:
 2. ~~Add `ResolveAuditLog` model and `GET /v1/aliases/audit/resolve` endpoint so every alias resolve call is durably recorded (phone, caller identity, result_found, timestamp) and queryable for anti-enumeration monitoring (Epic C2).~~ ✓ Done — `ResolveAuditLog` table persists one row per resolve call; `resolve_alias()` accepts and logs `X-Caller-Id` header; `GET /v1/aliases/audit/resolve?phone_e164=&limit=` returns pageable audit entries; `ResolveAuditEntry` + `ResolveAuditResponse` schemas added; 5 new tests covering direct lookup 200/404, audit entry with caller, not-found audit, and limit param; alias-service suite green: 17 tests passing.
 
 Immediate next implementation sequence:
+1. ~~Add caller-based anti-enumeration throttling on `GET /v1/aliases/resolve` so repeated not-found lookups from the same caller are rate-limited before they can scan large phone ranges (Epic C2).~~ ✓ Done — resolve calls now count recent unblocked misses per caller over a 60-minute window and return 429 after the third miss; anonymous callers are bucketed as `anonymous`; blocked attempts are still logged for audit.
+2. ~~Add `GET /v1/aliases/audit/resolve/summary` so operations can inspect aggregate resolve behavior per caller (`total`, `found`, `not_found`, `blocked`) without manually scanning raw audit rows.~~ ✓ Done — added `ResolveAuditSummaryResponse`, blocked flag on `ResolveAuditLog`, and summary aggregation by caller ID; anti-enumeration coverage added for named callers, anonymous callers, safe successful lookups, and summary counts.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives

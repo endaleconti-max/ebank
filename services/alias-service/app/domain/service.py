@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -8,6 +8,7 @@ from app.domain.errors import (
     AliasMustBeBoundError,
     AliasNotFoundError,
     PhoneNotVerifiedError,
+    ResolveLookupRateLimitedError,
     VerificationNotFoundError,
 )
 from app.domain.models import Alias, AliasStatus, PhoneVerification, ResolveAuditLog
@@ -15,6 +16,9 @@ from app.domain.schemas import BindAliasRequest, UnbindAliasRequest, UpdateDisco
 
 
 class AliasService:
+    RESOLVE_FAILURE_WINDOW_MINUTES = 60
+    RESOLVE_FAILURE_LIMIT = 3
+
     def verify_phone(self, db: Session, req: VerifyPhoneRequest) -> PhoneVerification:
         existing = (
             db.query(PhoneVerification)
@@ -116,6 +120,30 @@ class AliasService:
         return alias
 
     def resolve_alias(self, db: Session, phone_e164: str, caller_id: Optional[str] = None) -> Optional[Alias]:
+        caller_key = caller_id or "anonymous"
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=self.RESOLVE_FAILURE_WINDOW_MINUTES)
+        recent_failed_count = (
+            db.query(ResolveAuditLog)
+            .filter(
+                ResolveAuditLog.caller_id == caller_key,
+                ResolveAuditLog.result_found.is_(False),
+                ResolveAuditLog.blocked.is_(False),
+                ResolveAuditLog.created_at >= window_start,
+            )
+            .count()
+        )
+        if recent_failed_count >= self.RESOLVE_FAILURE_LIMIT:
+            db.add(
+                ResolveAuditLog(
+                    phone_e164=phone_e164,
+                    caller_id=caller_key,
+                    result_found=False,
+                    blocked=True,
+                )
+            )
+            db.commit()
+            raise ResolveLookupRateLimitedError(caller_key)
+
         alias = (
             db.query(Alias)
             .filter(
@@ -126,8 +154,9 @@ class AliasService:
         )
         log_entry = ResolveAuditLog(
             phone_e164=phone_e164,
-            caller_id=caller_id,
+            caller_id=caller_key,
             result_found=alias is not None,
+            blocked=False,
         )
         db.add(log_entry)
         db.commit()
@@ -144,6 +173,25 @@ class AliasService:
             .limit(limit)
             .all()
         )
+
+    def get_resolve_audit_summary(self, db: Session, caller_id: Optional[str] = None) -> dict:
+        caller_key = caller_id or "anonymous"
+        entries = (
+            db.query(ResolveAuditLog)
+            .filter(ResolveAuditLog.caller_id == caller_key)
+            .all()
+        )
+        total = len(entries)
+        found = sum(1 for entry in entries if entry.result_found and not entry.blocked)
+        blocked = sum(1 for entry in entries if entry.blocked)
+        not_found = total - found - blocked
+        return {
+            "caller_id": caller_key,
+            "total": total,
+            "found": found,
+            "not_found": not_found,
+            "blocked": blocked,
+        }
 
     def get_alias_history(self, db: Session, phone_e164: str) -> List[Alias]:
         return (

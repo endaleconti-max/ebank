@@ -66,6 +66,7 @@ class ResolveAuditEntry(BaseModel):
     phone_e164: str
     caller_id: Optional[str] = None
     result_found: bool
+    blocked: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -75,6 +76,14 @@ class ResolveAuditResponse(BaseModel):
     phone_e164: str
     total: int
     entries: List[ResolveAuditEntry]
+
+
+class ResolveAuditSummaryResponse(BaseModel):
+    caller_id: str
+    total: int
+    found: int
+    not_found: int
+    blocked: int
 
 
 class UnbindAliasRequest(BaseModel):

@@ -6,6 +6,7 @@ from app.domain.errors import (
     AliasMustBeBoundError,
     AliasNotFoundError,
     PhoneNotVerifiedError,
+    ResolveLookupRateLimitedError,
     VerificationNotFoundError,
 )
 from app.domain.schemas import (
@@ -14,6 +15,7 @@ from app.domain.schemas import (
     BindAliasRequest,
     ResolveAliasResponse,
     ResolveAuditResponse,
+    ResolveAuditSummaryResponse,
     UnbindAliasRequest,
     UpdateDiscoverableRequest,
     VerifyPhoneRequest,
@@ -73,7 +75,10 @@ def update_discoverable(alias_id: str, payload: UpdateDiscoverableRequest, db: S
 @router.get("/v1/aliases/resolve", response_model=ResolveAliasResponse)
 def resolve_alias(request: Request, phone_e164: str, db: Session = Depends(get_db)):
     caller_id = request.headers.get("X-Caller-Id")
-    alias = _svc.resolve_alias(db, phone_e164, caller_id=caller_id)
+    try:
+        alias = _svc.resolve_alias(db, phone_e164, caller_id=caller_id)
+    except ResolveLookupRateLimitedError:
+        raise HTTPException(status_code=429, detail="Resolve lookup rate limit exceeded")
     if alias is None:
         return ResolveAliasResponse(found=False)
     return ResolveAliasResponse(found=True, alias=alias)
@@ -87,6 +92,14 @@ def get_resolve_audit(
 ):
     entries = _svc.get_resolve_audit(db, phone_e164, limit=limit)
     return ResolveAuditResponse(phone_e164=phone_e164, total=len(entries), entries=entries)
+
+
+@router.get("/v1/aliases/audit/resolve/summary", response_model=ResolveAuditSummaryResponse)
+def get_resolve_audit_summary(
+    caller_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return _svc.get_resolve_audit_summary(db, caller_id=caller_id)
 
 
 @router.get("/v1/aliases/{alias_id}", response_model=AliasResponse)

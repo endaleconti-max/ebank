@@ -41,6 +41,7 @@ class ResolveAuditLog(Base):
     phone_e164: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     caller_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     result_found: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

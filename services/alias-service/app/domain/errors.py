@@ -16,3 +16,7 @@ class VerificationNotFoundError(Exception):
 
 class AliasMustBeBoundError(Exception):
     pass
+
+
+class ResolveLookupRateLimitedError(Exception):
+    pass

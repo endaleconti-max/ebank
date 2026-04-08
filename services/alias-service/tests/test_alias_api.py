@@ -314,3 +314,98 @@ def test_resolve_audit_limit_param() -> None:
     assert audit.status_code == 200
     body = audit.json()
     assert body["total"] == 3
+
+
+def test_resolve_allows_three_not_found_lookups_before_throttling() -> None:
+    for _ in range(3):
+        resp = client.get(
+            "/v1/aliases/resolve",
+            params={"phone_e164": "+19990000999"},
+            headers={"X-Caller-Id": "svc-enumerator"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["found"] is False
+
+
+def test_resolve_throttles_fourth_not_found_lookup_for_same_caller() -> None:
+    for _ in range(3):
+        client.get(
+            "/v1/aliases/resolve",
+            params={"phone_e164": "+19990000888"},
+            headers={"X-Caller-Id": "svc-blocked"},
+        )
+
+    blocked = client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000889"},
+        headers={"X-Caller-Id": "svc-blocked"},
+    )
+    assert blocked.status_code == 429
+
+
+def test_resolve_throttles_anonymous_caller_after_three_failures() -> None:
+    for _ in range(3):
+        client.get("/v1/aliases/resolve", params={"phone_e164": "+19990000777"})
+
+    blocked = client.get("/v1/aliases/resolve", params={"phone_e164": "+19990000778"})
+    assert blocked.status_code == 429
+
+
+def test_successful_resolve_does_not_count_toward_failure_limit() -> None:
+    verification_id = _do_two_step_verify()
+    client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-safe"},
+    )
+    for _ in range(3):
+        ok = client.get(
+            "/v1/aliases/resolve",
+            params={"phone_e164": PHONE},
+            headers={"X-Caller-Id": "svc-safe"},
+        )
+        assert ok.status_code == 200
+        assert ok.json()["found"] is True
+
+    miss = client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000779"},
+        headers={"X-Caller-Id": "svc-safe"},
+    )
+    assert miss.status_code == 200
+    assert miss.json()["found"] is False
+
+
+def test_resolve_audit_summary_counts_found_not_found_and_blocked() -> None:
+    verification_id = _do_two_step_verify()
+    client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-summary"},
+    )
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": PHONE},
+        headers={"X-Caller-Id": "svc-summary"},
+    )
+    for _ in range(3):
+        client.get(
+            "/v1/aliases/resolve",
+            params={"phone_e164": "+19990000666"},
+            headers={"X-Caller-Id": "svc-summary"},
+        )
+    client.get(
+        "/v1/aliases/resolve",
+        params={"phone_e164": "+19990000667"},
+        headers={"X-Caller-Id": "svc-summary"},
+    )
+
+    summary = client.get(
+        "/v1/aliases/audit/resolve/summary",
+        params={"caller_id": "svc-summary"},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["caller_id"] == "svc-summary"
+    assert body["total"] == 5
+    assert body["found"] == 1
+    assert body["not_found"] == 3
+    assert body["blocked"] == 1
