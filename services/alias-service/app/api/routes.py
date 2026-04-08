@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
@@ -96,7 +98,7 @@ def get_resolve_audit(
 
 @router.get("/v1/aliases/audit/resolve/summary", response_model=ResolveAuditSummaryResponse)
 def get_resolve_audit_summary(
-    caller_id: str | None = None,
+    caller_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     return _svc.get_resolve_audit_summary(db, caller_id=caller_id)

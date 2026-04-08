@@ -298,7 +298,7 @@ def test_resolve_audit_not_found_lookup_recorded() -> None:
     body = audit.json()
     assert body["total"] == 1
     assert body["entries"][0]["result_found"] is False
-    assert body["entries"][0]["caller_id"] is None
+    assert body["entries"][0]["caller_id"] == "anonymous"
 
 
 def test_resolve_audit_limit_param() -> None:
