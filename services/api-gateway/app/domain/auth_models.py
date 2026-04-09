@@ -33,6 +33,11 @@ class Permission(str, Enum):
     
     VIEW_RECONCILIATION = "reconciliation:view"
     RUN_RECONCILIATION = "reconciliation:run"
+    VIEW_AUTH_AUDIT = "auth:view_audit"
+
+    CREATE_USER = "identity:create_user"
+    VIEW_USER = "identity:view_user"
+    SUBMIT_KYC = "identity:submit_kyc"
     
     VIEW_ALIASES = "alias:view"
     MANAGE_ALIASES = "alias:manage"

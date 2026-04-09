@@ -7,6 +7,8 @@ from app.clients.connector_client import ConnectorClient
 from app.clients.identity_client import IdentityClient
 from app.clients.orchestrator_client import OrchestratorClient
 from app.clients.reconciliation_client import ReconciliationClient
+from app.config import settings
+from app.domain.auth_models import Permission
 
 router = APIRouter(prefix="/v1", tags=["api-gateway"])
 _client = OrchestratorClient()
@@ -40,8 +42,22 @@ def _forward_headers(request: Request) -> dict:
     return headers
 
 
+def _authorize(request: Request, permission: Permission) -> None:
+    if not settings.enforce_authorization:
+        return
+    identity = getattr(request.state, "identity", None)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="missing authenticated identity")
+    if not identity.has_permission(permission):
+        raise HTTPException(
+            status_code=403,
+            detail=f"missing required permission: {permission.value}",
+        )
+
+
 @router.post("/transfers")
 async def create_transfer(payload: dict, request: Request):
+    _authorize(request, Permission.CREATE_TRANSFER)
     resp = await _client.create_transfer(payload=payload, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
@@ -59,6 +75,7 @@ async def list_transfers(
     created_at_to: Optional[str] = None,
     q: Optional[str] = None,
 ):
+    _authorize(request, Permission.LIST_TRANSFERS)
     params = {k: v for k, v in {
         "sender_user_id": sender_user_id,
         "status": status,
@@ -76,6 +93,7 @@ async def list_transfers(
 
 @router.get("/transfers/{transfer_id}")
 async def get_transfer(transfer_id: str, request: Request):
+    _authorize(request, Permission.VIEW_TRANSFER)
     resp = await _client.get_transfer(transfer_id=transfer_id, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
@@ -84,6 +102,7 @@ async def get_transfer(transfer_id: str, request: Request):
 
 @router.patch("/transfers/{transfer_id}/note")
 async def update_transfer_note(transfer_id: str, payload: dict, request: Request):
+    _authorize(request, Permission.UPDATE_TRANSFER_NOTE)
     resp = await _client.update_transfer_note(
         transfer_id=transfer_id,
         payload=payload,
@@ -96,6 +115,7 @@ async def update_transfer_note(transfer_id: str, payload: dict, request: Request
 
 @router.post("/transfers/{transfer_id}/transition")
 async def transition_transfer(transfer_id: str, payload: dict, request: Request):
+    _authorize(request, Permission.TRANSITION_TRANSFER)
     resp = await _client.transition_transfer(transfer_id=transfer_id, payload=payload, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
@@ -104,6 +124,7 @@ async def transition_transfer(transfer_id: str, payload: dict, request: Request)
 
 @router.post("/transfers/{transfer_id}/cancel")
 async def cancel_transfer(transfer_id: str, request: Request):
+    _authorize(request, Permission.CANCEL_TRANSFER)
     resp = await _client.cancel_transfer(transfer_id=transfer_id, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
@@ -121,6 +142,7 @@ async def list_transfer_events(
     created_at_from: Optional[str] = None,
     created_at_to: Optional[str] = None,
 ):
+    _authorize(request, Permission.VIEW_TRANSFER)
     params = {}
     if event_type:
         params["event_type"] = event_type
@@ -153,6 +175,7 @@ async def list_transfer_events(
 
 @router.get("/transfers/{transfer_id}/events/summary")
 async def transfer_event_summary(transfer_id: str, request: Request):
+    _authorize(request, Permission.VIEW_TRANSFER)
     resp = await _client.get_transfer_event_summary(transfer_id=transfer_id, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
@@ -161,6 +184,7 @@ async def transfer_event_summary(transfer_id: str, request: Request):
 
 @router.post("/transfers/callbacks/connector")
 async def connector_callback(payload: dict, request: Request):
+    _authorize(request, Permission.TRANSITION_TRANSFER)
     resp = await _client.connector_callback(payload=payload, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
@@ -169,6 +193,7 @@ async def connector_callback(payload: dict, request: Request):
 
 @router.post("/transfers/events/relay")
 async def relay_transfer_events(request: Request, limit: int = 100):
+    _authorize(request, Permission.VIEW_TRANSFER)
     resp = await _client.relay_events(limit=limit, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream orchestrator unavailable")
@@ -181,6 +206,7 @@ async def list_connector_transaction_events(
     external_ref: Optional[str] = None,
     status: Optional[str] = None,
 ):
+    _authorize(request, Permission.VIEW_CONNECTOR_TRANSACTIONS)
     params = {
         k: v
         for k, v in {
@@ -197,6 +223,7 @@ async def list_connector_transaction_events(
 
 @router.get("/connectors/transactions/{external_ref}")
 async def get_connector_transaction(external_ref: str, request: Request):
+    _authorize(request, Permission.VIEW_CONNECTOR_TRANSACTIONS)
     resp = await _connector_client.get_transaction(external_ref=external_ref, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream connector unavailable")
@@ -205,6 +232,7 @@ async def get_connector_transaction(external_ref: str, request: Request):
 
 @router.get("/connectors/transactions")
 async def list_connector_transactions(request: Request):
+    _authorize(request, Permission.LIST_CONNECTORS)
     resp = await _connector_client.list_transactions(headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream connector unavailable")
@@ -213,6 +241,7 @@ async def list_connector_transactions(request: Request):
 
 @router.post("/connectors/simulate-callback")
 async def simulate_connector_callback(payload: dict, request: Request):
+    _authorize(request, Permission.SIMULATE_CONNECTOR_CALLBACK)
     resp = await _connector_client.simulate_callback(payload=payload, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream connector unavailable")
@@ -221,6 +250,7 @@ async def simulate_connector_callback(payload: dict, request: Request):
 
 @router.post("/reconciliation/runs")
 async def run_reconciliation(request: Request):
+    _authorize(request, Permission.RUN_RECONCILIATION)
     resp = await _reconciliation_client.run_reconciliation(headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream reconciliation unavailable")
@@ -229,6 +259,7 @@ async def run_reconciliation(request: Request):
 
 @router.get("/reconciliation/runs/{run_id}")
 async def get_reconciliation_run(run_id: str, request: Request):
+    _authorize(request, Permission.VIEW_RECONCILIATION)
     resp = await _reconciliation_client.get_reconciliation_run(run_id=run_id, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream reconciliation unavailable")
@@ -239,6 +270,7 @@ async def get_reconciliation_run(run_id: str, request: Request):
 
 @router.post("/users")
 async def create_user(payload: dict, request: Request):
+    _authorize(request, Permission.CREATE_USER)
     resp = await _identity_client.create_user(payload=payload, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream identity unavailable")
@@ -247,6 +279,7 @@ async def create_user(payload: dict, request: Request):
 
 @router.get("/users/{user_id}")
 async def get_user(user_id: str, request: Request):
+    _authorize(request, Permission.VIEW_USER)
     resp = await _identity_client.get_user(user_id=user_id, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream identity unavailable")
@@ -255,6 +288,7 @@ async def get_user(user_id: str, request: Request):
 
 @router.get("/users/{user_id}/status")
 async def get_user_status(user_id: str, request: Request):
+    _authorize(request, Permission.VIEW_USER)
     resp = await _identity_client.get_user_status(user_id=user_id, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream identity unavailable")
@@ -263,6 +297,7 @@ async def get_user_status(user_id: str, request: Request):
 
 @router.post("/users/{user_id}/kyc/submit")
 async def submit_kyc(user_id: str, payload: dict, request: Request):
+    _authorize(request, Permission.SUBMIT_KYC)
     resp = await _identity_client.submit_kyc(
         user_id=user_id, payload=payload, headers=_forward_headers(request)
     )
@@ -275,6 +310,7 @@ async def submit_kyc(user_id: str, payload: dict, request: Request):
 
 @router.post("/aliases/verify-phone")
 async def verify_phone(payload: dict, request: Request):
+    _authorize(request, Permission.MANAGE_ALIASES)
     resp = await _alias_client.verify_phone(payload=payload, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream alias unavailable")
@@ -283,6 +319,7 @@ async def verify_phone(payload: dict, request: Request):
 
 @router.post("/aliases/bind")
 async def bind_alias(payload: dict, request: Request):
+    _authorize(request, Permission.MANAGE_ALIASES)
     resp = await _alias_client.bind_alias(payload=payload, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream alias unavailable")
@@ -291,6 +328,7 @@ async def bind_alias(payload: dict, request: Request):
 
 @router.get("/aliases/resolve")
 async def resolve_alias(phone_e164: str, request: Request):
+    _authorize(request, Permission.VIEW_ALIASES)
     resp = await _alias_client.resolve_alias(phone_e164=phone_e164, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream alias unavailable")

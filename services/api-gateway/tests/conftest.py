@@ -8,6 +8,7 @@ import sys
 
 # Disable authentication before importing app
 os.environ["ENFORCE_AUTHENTICATION"] = "false"
+os.environ["ENFORCE_AUTHORIZATION"] = "false"
 
 import pytest
 
@@ -20,4 +21,5 @@ from app.config import settings as _settings
 def verify_auth_disabled():
     """Verify authentication is disabled for tests."""
     assert _settings.enforce_authentication is False, "Authentication should be disabled for tests"
+    assert _settings.enforce_authorization is False, "Authorization should be disabled for tests"
 

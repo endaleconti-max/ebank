@@ -358,6 +358,11 @@ Immediate next implementation sequence:
 Pair 8 completion summary: Full auth infrastructure for API Gateway (40 tests passing: 19 auth-specific + 21 gateway regression tests); bearer token extraction, known-token database, revocation tracking, request identity propagation; production-ready with configurable enforcement toggle.
 
 Immediate next implementation sequence:
+1. ~~Add route-level authorization checks in API Gateway so authenticated identities must also carry endpoint-appropriate permissions (for example `transfer:create`, `reconciliation:run`, `alias:manage`) before requests are forwarded upstream.~~ ✓ Done — added `_authorize()` in `app/api/routes.py` with centralized permission enforcement and stable `401`/`403` error semantics, then wired permission checks across transfer, connector, reconciliation, identity, and alias gateway routes.
+2. ~~Add configurable authorization enforcement toggle and regression coverage so existing test and local-dev workflows can disable strict permission checks while production retains strict policy enforcement.~~ ✓ Done — added `ENFORCE_AUTHORIZATION` setting in `app/config.py`, test bootstrap now disables both auth and authorization in `tests/conftest.py`, and new auth suite coverage validates `_authorize()` success/401/403 behavior plus identity header forwarding.
+Pair 9 completion summary: API Gateway now enforces both authentication and route-level authorization with explicit permission taxonomy expansion for identity operations (`identity:create_user`, `identity:view_user`, `identity:submit_kyc`); full gateway suite green at 43 passing tests.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives

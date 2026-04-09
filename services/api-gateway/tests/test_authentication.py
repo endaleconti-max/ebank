@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.domain.auth_models import CallerType, Permission, RequestIdentity
+from app.config import settings
+from app.api.routes import _authorize, _forward_headers
 from app.domain.token_validator import TokenValidator, get_token_validator
 from app.middleware.authentication import AuthenticationMiddleware
 
@@ -242,8 +244,6 @@ class TestCallerIdentityPropagation:
     
     def test_forward_headers_includes_identity(self):
         """Should include caller identity in forwarded headers."""
-        from app.api.routes import _forward_headers
-        
         # Create a mock request with identity
         mock_request = MagicMock(spec=Request)
         mock_request.state.request_id = "req-123"
@@ -264,8 +264,6 @@ class TestCallerIdentityPropagation:
     
     def test_forward_headers_without_identity(self):
         """Should work when identity is not present."""
-        from app.api.routes import _forward_headers
-        
         # Create a mock request without identity
         mock_request = MagicMock(spec=Request)
         mock_request.state.request_id = "req-456"
@@ -277,3 +275,49 @@ class TestCallerIdentityPropagation:
         # Should include request context
         assert headers["X-Request-Id"] == "req-456"
         # Identity headers should not be present (but this is ok)
+
+
+class TestAuthorizationHelper:
+    """Test route-level authorization checks."""
+
+    def test_authorize_allows_with_permission(self):
+        original = settings.enforce_authorization
+        settings.enforce_authorization = True
+        try:
+            mock_request = MagicMock(spec=Request)
+            mock_request.state.identity = RequestIdentity(
+                caller_id="admin-user-001",
+                caller_type=CallerType.ADMIN,
+                permissions=[Permission.LIST_TRANSFERS],
+            )
+            _authorize(mock_request, Permission.LIST_TRANSFERS)
+        finally:
+            settings.enforce_authorization = original
+
+    def test_authorize_raises_401_without_identity(self):
+        original = settings.enforce_authorization
+        settings.enforce_authorization = True
+        try:
+            mock_request = MagicMock(spec=Request)
+            mock_request.state.identity = None
+            with pytest.raises(Exception) as exc_info:
+                _authorize(mock_request, Permission.LIST_TRANSFERS)
+            assert getattr(exc_info.value, "status_code", None) == 401
+        finally:
+            settings.enforce_authorization = original
+
+    def test_authorize_raises_403_without_permission(self):
+        original = settings.enforce_authorization
+        settings.enforce_authorization = True
+        try:
+            mock_request = MagicMock(spec=Request)
+            mock_request.state.identity = RequestIdentity(
+                caller_id="user-app-001",
+                caller_type=CallerType.USER,
+                permissions=[Permission.LIST_TRANSFERS],
+            )
+            with pytest.raises(Exception) as exc_info:
+                _authorize(mock_request, Permission.RUN_RECONCILIATION)
+            assert getattr(exc_info.value, "status_code", None) == 403
+        finally:
+            settings.enforce_authorization = original
