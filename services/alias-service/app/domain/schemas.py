@@ -158,6 +158,7 @@ class UnbindReasonSummaryEntry(BaseModel):
 
 
 class UnbindReasonSummaryListResponse(BaseModel):
+    reason_code: Optional[str] = None
     total_reasons: int
     window_minutes: int
     reasons: List[UnbindReasonSummaryEntry]
@@ -202,9 +203,20 @@ class DiscoverabilityReasonSummaryEntry(BaseModel):
 
 
 class DiscoverabilityReasonSummaryListResponse(BaseModel):
+    reason_code: Optional[str] = None
     total_reasons: int
     window_minutes: int
     reasons: List[DiscoverabilityReasonSummaryEntry]
+
+
+class LifecycleAuditSummaryResponse(BaseModel):
+    phone_e164: Optional[str] = None
+    user_id: Optional[str] = None
+    window_minutes: int
+    unbind_total: int
+    unbind_by_reason: List[UnbindReasonSummaryEntry]
+    discoverability_total: int
+    discoverability_by_reason: List[DiscoverabilityReasonSummaryEntry]
 
 
 class DiscoverabilityAuditEntry(BaseModel):

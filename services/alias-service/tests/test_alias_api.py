@@ -865,6 +865,68 @@ def test_unbind_reason_summary_excludes_old_unbinds() -> None:
     assert all(entry["reason_code"] != "move" for entry in body["reasons"])
 
 
+def test_unbind_reason_summary_filters_by_reason_code() -> None:
+    phone_a = "+15550009988"
+    phone_b = "+15550009989"
+    otp = "654321"
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_a, "otp_code": otp})
+    verify_a = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_a, "otp_code": otp})
+    bind_a = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify_a.json()["verification_id"], "user_id": "u-unbind-reason-a"},
+    )
+    client.post(f"/v1/aliases/{bind_a.json()['alias_id']}/unbind", json={"reason_code": "user-request"})
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_b, "otp_code": otp})
+    verify_b = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_b, "otp_code": otp})
+    bind_b = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify_b.json()["verification_id"], "user_id": "u-unbind-reason-b"},
+    )
+    client.post(f"/v1/aliases/{bind_b.json()['alias_id']}/unbind", json={"reason_code": "number-change"})
+
+    summary = client.get(
+        "/v1/aliases/audit/unbind-reasons",
+        params={"reason_code": "user-request", "window_minutes": 60},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["reason_code"] == "user-request"
+    assert body["total_reasons"] == 1
+    assert body["reasons"][0]["reason_code"] == "user-request"
+
+
+def test_discoverability_reason_summary_filters_by_reason_code() -> None:
+    phone = "+15550009990"
+    otp = "654321"
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone, "otp_code": otp})
+    verify = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone, "otp_code": otp})
+    bind = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify.json()["verification_id"], "user_id": "u-disc-reason", "discoverable": True},
+    )
+    alias_id = bind.json()["alias_id"]
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": False, "reason_code": "privacy-request"},
+    )
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": True, "reason_code": "support-guided"},
+    )
+
+    summary = client.get(
+        "/v1/aliases/audit/discoverability-reasons",
+        params={"reason_code": "support-guided", "window_minutes": 60},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["reason_code"] == "support-guided"
+    assert body["total_reasons"] == 1
+    assert body["reasons"][0]["reason_code"] == "support-guided"
+
+
 def test_unbind_audit_filters_by_user_and_reason() -> None:
     phone_a = "+15550009991"
     phone_b = "+15550009992"
@@ -1169,3 +1231,42 @@ def test_discoverability_user_summary_excludes_old_changes() -> None:
     assert summary.status_code == 200
     body = summary.json()
     assert all(entry["user_id"] != "u-disc-old-user" for entry in body["users"])
+
+
+def test_lifecycle_audit_summary_combines_unbind_and_discoverability() -> None:
+    phone = "+15550009998"
+    otp = "654321"
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone, "otp_code": otp})
+    verify = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone, "otp_code": otp})
+    bind = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify.json()["verification_id"], "user_id": "u-lifecycle", "discoverable": True},
+    )
+    alias_id = bind.json()["alias_id"]
+
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": False, "reason_code": "privacy-request"},
+    )
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": True, "reason_code": "support-guided"},
+    )
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "user-request"})
+
+    summary = client.get(
+        "/v1/aliases/audit/lifecycle/summary",
+        params={"phone_e164": phone, "user_id": "u-lifecycle", "window_minutes": 60},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["phone_e164"] == phone
+    assert body["user_id"] == "u-lifecycle"
+    assert body["unbind_total"] == 1
+    assert body["discoverability_total"] == 2
+    unbind_reasons = [entry["reason_code"] for entry in body["unbind_by_reason"]]
+    discoverability_reasons = [entry["reason_code"] for entry in body["discoverability_by_reason"]]
+    assert "user-request" in unbind_reasons
+    assert "privacy-request" in discoverability_reasons
+    assert "support-guided" in discoverability_reasons

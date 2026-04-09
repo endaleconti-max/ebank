@@ -349,6 +349,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/audit/discoverability/users` user-level summary endpoint so operators can quickly identify accounts with unusual visibility-toggle activity over a rolling window.~~ ✓ Done — added per-user discoverability aggregates (`total`, `visible_enabled`, `visible_disabled`, `latest_at`) with `window_minutes` and `limit` filters; tests cover filtered audit retrieval, user summary counts, and old-entry exclusion.
 
 Immediate next implementation sequence:
+1. ~~Add optional `reason_code` filtering to lifecycle summary endpoints (`/audit/unbind-reasons` and `/audit/discoverability-reasons`) so compliance can isolate one policy bucket without post-processing all categories client-side.~~ ✓ Done — both summary endpoints now accept `reason_code`, apply server-side filtering, and echo the applied filter in the response.
+2. ~~Add a consolidated `GET /v1/aliases/audit/lifecycle/summary` endpoint so investigators can retrieve unbind and discoverability aggregates together for a given `phone_e164` and/or `user_id` in a single request.~~ ✓ Done — added combined lifecycle summary response with `unbind_total`, `unbind_by_reason`, `discoverability_total`, and `discoverability_by_reason`, plus `phone_e164`/`user_id` scoping.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives

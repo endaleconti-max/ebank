@@ -383,18 +383,17 @@ class AliasService:
     def list_unbind_reason_summaries(
         self,
         db: Session,
+        reason_code: Optional[str] = None,
         window_minutes: int = 60,
         limit: int = 50,
     ) -> List[dict]:
         window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
-        logs = (
-            db.query(UnbindAuditLog)
-            .filter(
-                UnbindAuditLog.created_at >= window_start,
-            )
-            .order_by(UnbindAuditLog.created_at.desc())
-            .all()
+        query = db.query(UnbindAuditLog).filter(
+            UnbindAuditLog.created_at >= window_start,
         )
+        if reason_code:
+            query = query.filter(UnbindAuditLog.reason_code == reason_code)
+        logs = query.order_by(UnbindAuditLog.created_at.desc()).all()
         by_reason = {}
         for log in logs:
             reason_key = log.reason_code
@@ -483,18 +482,17 @@ class AliasService:
     def list_discoverability_reason_summaries(
         self,
         db: Session,
+        reason_code: Optional[str] = None,
         window_minutes: int = 60,
         limit: int = 50,
     ) -> List[dict]:
         window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
-        logs = (
-            db.query(DiscoverabilityAuditLog)
-            .filter(
-                DiscoverabilityAuditLog.created_at >= window_start,
-            )
-            .order_by(DiscoverabilityAuditLog.created_at.desc())
-            .all()
+        query = db.query(DiscoverabilityAuditLog).filter(
+            DiscoverabilityAuditLog.created_at >= window_start,
         )
+        if reason_code:
+            query = query.filter(DiscoverabilityAuditLog.reason_code == reason_code)
+        logs = query.order_by(DiscoverabilityAuditLog.created_at.desc()).all()
         by_reason = {}
         for log in logs:
             reason_key = log.reason_code
@@ -520,6 +518,66 @@ class AliasService:
             reverse=True,
         )
         return summaries[:limit]
+
+    def get_lifecycle_audit_summary(
+        self,
+        db: Session,
+        window_minutes: int = 60,
+        phone_e164: Optional[str] = None,
+        user_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> dict:
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+
+        unbind_query = db.query(UnbindAuditLog).filter(UnbindAuditLog.created_at >= window_start)
+        discoverability_query = db.query(DiscoverabilityAuditLog).filter(
+            DiscoverabilityAuditLog.created_at >= window_start
+        )
+
+        if phone_e164:
+            unbind_query = unbind_query.filter(UnbindAuditLog.phone_e164 == phone_e164)
+            discoverability_query = discoverability_query.filter(DiscoverabilityAuditLog.phone_e164 == phone_e164)
+        if user_id:
+            unbind_query = unbind_query.filter(UnbindAuditLog.user_id == user_id)
+            discoverability_query = discoverability_query.filter(DiscoverabilityAuditLog.user_id == user_id)
+
+        unbind_logs = unbind_query.order_by(UnbindAuditLog.created_at.desc()).all()
+        discoverability_logs = discoverability_query.order_by(DiscoverabilityAuditLog.created_at.desc()).all()
+
+        unbind_by_reason = {}
+        for log in unbind_logs:
+            stats = unbind_by_reason.setdefault(
+                log.reason_code,
+                {"reason_code": log.reason_code, "total": 0, "latest_at": None},
+            )
+            stats["total"] += 1
+            if stats["latest_at"] is None or log.created_at > stats["latest_at"]:
+                stats["latest_at"] = log.created_at
+
+        discoverability_by_reason = {}
+        for log in discoverability_logs:
+            stats = discoverability_by_reason.setdefault(
+                log.reason_code,
+                {"reason_code": log.reason_code, "total": 0, "latest_at": None},
+            )
+            stats["total"] += 1
+            if stats["latest_at"] is None or log.created_at > stats["latest_at"]:
+                stats["latest_at"] = log.created_at
+
+        unbind_rows = list(unbind_by_reason.values())
+        discoverability_rows = list(discoverability_by_reason.values())
+        unbind_rows.sort(key=lambda row: (row["total"], row["reason_code"]), reverse=True)
+        discoverability_rows.sort(key=lambda row: (row["total"], row["reason_code"]), reverse=True)
+
+        return {
+            "phone_e164": phone_e164,
+            "user_id": user_id,
+            "window_minutes": window_minutes,
+            "unbind_total": len(unbind_logs),
+            "unbind_by_reason": unbind_rows[:limit],
+            "discoverability_total": len(discoverability_logs),
+            "discoverability_by_reason": discoverability_rows[:limit],
+        }
 
     def query_discoverability_audit(
         self,

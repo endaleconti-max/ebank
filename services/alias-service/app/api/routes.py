@@ -13,6 +13,7 @@ from app.domain.errors import (
 )
 from app.domain.schemas import (
     AliasHistoryResponse,
+    LifecycleAuditSummaryResponse,
     RecycledAliasListResponse,
     AliasResponse,
     BindAliasRequest,
@@ -212,16 +213,19 @@ def list_resolve_audit_purposes(
 
 @router.get("/v1/aliases/audit/unbind-reasons", response_model=UnbindReasonSummaryListResponse)
 def list_unbind_reason_summaries(
+    reason_code: Optional[str] = None,
     window_minutes: int = Query(default=60, ge=1, le=1440),
     limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     reasons = _svc.list_unbind_reason_summaries(
         db,
+        reason_code=reason_code,
         window_minutes=window_minutes,
         limit=limit,
     )
     return UnbindReasonSummaryListResponse(
+        reason_code=reason_code,
         total_reasons=len(reasons),
         window_minutes=window_minutes,
         reasons=reasons,
@@ -275,19 +279,39 @@ def list_unbind_user_summaries(
 
 @router.get("/v1/aliases/audit/discoverability-reasons", response_model=DiscoverabilityReasonSummaryListResponse)
 def list_discoverability_reason_summaries(
+    reason_code: Optional[str] = None,
     window_minutes: int = Query(default=60, ge=1, le=1440),
     limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     reasons = _svc.list_discoverability_reason_summaries(
         db,
+        reason_code=reason_code,
         window_minutes=window_minutes,
         limit=limit,
     )
     return DiscoverabilityReasonSummaryListResponse(
+        reason_code=reason_code,
         total_reasons=len(reasons),
         window_minutes=window_minutes,
         reasons=reasons,
+    )
+
+
+@router.get("/v1/aliases/audit/lifecycle/summary", response_model=LifecycleAuditSummaryResponse)
+def get_lifecycle_audit_summary(
+    phone_e164: Optional[str] = None,
+    user_id: Optional[str] = None,
+    window_minutes: int = Query(default=60, ge=1, le=1440),
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    return _svc.get_lifecycle_audit_summary(
+        db,
+        window_minutes=window_minutes,
+        phone_e164=phone_e164,
+        user_id=user_id,
+        limit=limit,
     )
 
 
