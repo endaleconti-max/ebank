@@ -27,10 +27,17 @@ TransferEventStatusFilter = Literal[
 
 
 def _forward_headers(request: Request) -> dict:
-    return {
+    headers = {
         "Idempotency-Key": request.headers.get("Idempotency-Key", ""),
         "X-Request-Id": getattr(request.state, "request_id", ""),
     }
+    
+    # Propagate authenticated caller identity to downstream services
+    if hasattr(request.state, "identity") and request.state.identity:
+        identity_headers = request.state.identity.to_headers()
+        headers.update(identity_headers)
+    
+    return headers
 
 
 @router.post("/transfers")

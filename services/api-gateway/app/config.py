@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     identity_base_url: str = "http://localhost:8001"
     alias_base_url: str = "http://localhost:8002"
     enforce_idempotency: bool = True
+    enforce_authentication: bool = True
     cors_allowed_origins: list[str] = ["*"]
 
 
