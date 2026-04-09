@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.domain.auth_models import CallerType, Permission, RequestIdentity
 from app.config import settings
 from app.api.routes import _authorize, _forward_headers
+from app.domain.authorization_audit import get_authorization_audit_store
 from app.domain.token_validator import TokenValidator, get_token_validator
 from app.middleware.authentication import AuthenticationMiddleware
 
@@ -283,46 +284,55 @@ class TestAuthorizationHelper:
     def test_authorize_allows_with_permission(self):
         original = settings.enforce_authorization
         settings.enforce_authorization = True
-            store = get_authorization_audit_store()
-            store.clear()
+        store = get_authorization_audit_store()
+        store.clear()
         try:
             mock_request = MagicMock(spec=Request)
+            mock_request.method = "GET"
+            mock_request.url.path = "/v1/transfers"
+            mock_request.state.request_id = "req-authz-allow"
             mock_request.state.identity = RequestIdentity(
                 caller_id="admin-user-001",
                 caller_type=CallerType.ADMIN,
                 permissions=[Permission.LIST_TRANSFERS],
             )
             _authorize(mock_request, Permission.LIST_TRANSFERS)
-                rows = store.query(caller_id="admin-user-001", allowed=True, limit=1)
-                assert len(rows) == 1
-                assert rows[0]["reason"] == "authorized"
+            rows = store.query(caller_id="admin-user-001", allowed=True, limit=1)
+            assert len(rows) == 1
+            assert rows[0]["reason"] == "authorized"
         finally:
             settings.enforce_authorization = original
 
     def test_authorize_raises_401_without_identity(self):
         original = settings.enforce_authorization
         settings.enforce_authorization = True
-            store = get_authorization_audit_store()
-            store.clear()
+        store = get_authorization_audit_store()
+        store.clear()
         try:
             mock_request = MagicMock(spec=Request)
+            mock_request.method = "GET"
+            mock_request.url.path = "/v1/transfers"
+            mock_request.state.request_id = "req-authz-401"
             mock_request.state.identity = None
             with pytest.raises(Exception) as exc_info:
                 _authorize(mock_request, Permission.LIST_TRANSFERS)
             assert getattr(exc_info.value, "status_code", None) == 401
-                rows = store.query(caller_id="unknown", allowed=False, limit=1)
-                assert len(rows) == 1
-                assert rows[0]["reason"] == "missing_identity"
+            rows = store.query(caller_id="unknown", allowed=False, limit=1)
+            assert len(rows) == 1
+            assert rows[0]["reason"] == "missing_identity"
         finally:
             settings.enforce_authorization = original
 
     def test_authorize_raises_403_without_permission(self):
         original = settings.enforce_authorization
         settings.enforce_authorization = True
-            store = get_authorization_audit_store()
-            store.clear()
+        store = get_authorization_audit_store()
+        store.clear()
         try:
             mock_request = MagicMock(spec=Request)
+            mock_request.method = "POST"
+            mock_request.url.path = "/v1/reconciliation/runs"
+            mock_request.state.request_id = "req-authz-403"
             mock_request.state.identity = RequestIdentity(
                 caller_id="user-app-001",
                 caller_type=CallerType.USER,
@@ -331,8 +341,8 @@ class TestAuthorizationHelper:
             with pytest.raises(Exception) as exc_info:
                 _authorize(mock_request, Permission.RUN_RECONCILIATION)
             assert getattr(exc_info.value, "status_code", None) == 403
-                rows = store.query(caller_id="user-app-001", allowed=False, limit=1)
-                assert len(rows) == 1
-                assert rows[0]["reason"] == "missing_permission"
+            rows = store.query(caller_id="user-app-001", allowed=False, limit=1)
+            assert len(rows) == 1
+            assert rows[0]["reason"] == "missing_permission"
         finally:
             settings.enforce_authorization = original

@@ -363,6 +363,11 @@ Immediate next implementation sequence:
 Pair 9 completion summary: API Gateway now enforces both authentication and route-level authorization with explicit permission taxonomy expansion for identity operations (`identity:create_user`, `identity:view_user`, `identity:submit_kyc`); full gateway suite green at 43 passing tests.
 
 Immediate next implementation sequence:
+1. ~~Add gateway-side authorization decision audit logging so every permission check records caller, endpoint, required permission, allow/deny result, reason, request ID, and timestamp for post-incident security review.~~ ✓ Done — added `AuthorizationAuditStore` in `app/domain/authorization_audit.py`; route-level `_authorize()` now records both allow and deny decisions (`authorized`, `missing_identity`, `missing_permission`) with request metadata.
+2. ~~Add an admin query endpoint for authorization audit records with caller/outcome/window filters so security/compliance teams can inspect access behavior without log scraping.~~ ✓ Done — added `GET /v1/auth/audit/authorization` with `caller_id`, `allowed`, `window_minutes`, and `limit` filters, protected by `auth:view_audit` permission; admin token now includes this permission.
+Pair 10 completion summary: Authorization checks are now observable via an in-memory audit stream and query API; targeted + full gateway suites are green at 44 passing tests.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives

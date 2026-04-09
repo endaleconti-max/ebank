@@ -238,6 +238,39 @@ def test_transfer_events_are_forwarded(monkeypatch) -> None:
     }
 
 
+def test_authorization_audit_endpoint_filters_entries() -> None:
+    from app.api import routes
+
+    routes._authz_audit_store.clear()
+    routes._authz_audit_store.record(
+        caller_id="admin-user-001",
+        method="GET",
+        path="/v1/transfers",
+        required_permission="transfer:list",
+        allowed=True,
+        reason="authorized",
+        request_id="req-1",
+    )
+    routes._authz_audit_store.record(
+        caller_id="user-app-001",
+        method="POST",
+        path="/v1/reconciliation/runs",
+        required_permission="reconciliation:run",
+        allowed=False,
+        reason="missing_permission",
+        request_id="req-2",
+    )
+
+    resp = client.get("/v1/auth/audit/authorization", params={"allowed": "false", "limit": 10})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert len(body["entries"]) == 1
+    assert body["entries"][0]["caller_id"] == "user-app-001"
+    assert body["entries"][0]["allowed"] is False
+
+
 def test_transfer_events_pagination_is_forwarded(monkeypatch) -> None:
     from app.api import routes
 
