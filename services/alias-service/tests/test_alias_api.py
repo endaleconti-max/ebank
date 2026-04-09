@@ -917,3 +917,100 @@ def test_discoverability_reason_summary_excludes_old_changes() -> None:
     assert summary.status_code == 200
     body = summary.json()
     assert all(entry["reason_code"] != "fraud-review" for entry in body["reasons"])
+
+
+def test_discoverability_audit_filters_by_user_id_and_reason() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-audit-filter", "discoverable": True},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": False, "reason_code": "privacy-request"},
+    )
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": True, "reason_code": "support-guided"},
+    )
+
+    filtered = client.get(
+        "/v1/aliases/audit/discoverability",
+        params={"user_id": "u-audit-filter", "reason_code": "support-guided", "limit": 10},
+    )
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert body["user_id"] == "u-audit-filter"
+    assert body["reason_code"] == "support-guided"
+    assert body["total"] == 1
+    assert body["entries"][0]["reason_code"] == "support-guided"
+
+
+def test_discoverability_user_summary_lists_users() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-disc-user-a", "discoverable": True},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": False, "reason_code": "privacy-request"},
+    )
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "user-request"})
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    verify2 = client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    bind_resp2 = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify2.json()["verification_id"], "user_id": "u-disc-user-b", "discoverable": True},
+    )
+    alias_id2 = bind_resp2.json()["alias_id"]
+    client.patch(
+        f"/v1/aliases/{alias_id2}/discoverable",
+        json={"discoverable": False, "reason_code": "fraud-review"},
+    )
+    client.patch(
+        f"/v1/aliases/{alias_id2}/discoverable",
+        json={"discoverable": True, "reason_code": "support-guided"},
+    )
+
+    summary = client.get(
+        "/v1/aliases/audit/discoverability/users",
+        params={"window_minutes": 60, "limit": 10},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["total_users"] >= 2
+    users = {entry["user_id"]: entry for entry in body["users"]}
+    assert users["u-disc-user-a"]["visible_disabled"] == 1
+    assert users["u-disc-user-a"]["visible_enabled"] == 0
+    assert users["u-disc-user-b"]["visible_disabled"] == 1
+    assert users["u-disc-user-b"]["visible_enabled"] == 1
+
+
+def test_discoverability_user_summary_excludes_old_changes() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-disc-old-user", "discoverable": True},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": False, "reason_code": "compliance-review"},
+    )
+
+    with SessionLocal() as db:
+        log = db.query(DiscoverabilityAuditLog).filter(DiscoverabilityAuditLog.alias_id == alias_id).first()
+        log.created_at = log.created_at.replace(year=log.created_at.year - 1)
+        db.commit()
+
+    summary = client.get(
+        "/v1/aliases/audit/discoverability/users",
+        params={"window_minutes": 60},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert all(entry["user_id"] != "u-disc-old-user" for entry in body["users"])

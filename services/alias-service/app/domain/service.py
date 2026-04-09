@@ -454,6 +454,68 @@ class AliasService:
         )
         return summaries[:limit]
 
+    def query_discoverability_audit(
+        self,
+        db: Session,
+        user_id: Optional[str] = None,
+        reason_code: Optional[str] = None,
+        window_minutes: Optional[int] = None,
+        limit: int = 100,
+    ) -> List[DiscoverabilityAuditLog]:
+        query = db.query(DiscoverabilityAuditLog)
+        if user_id:
+            query = query.filter(DiscoverabilityAuditLog.user_id == user_id)
+        if reason_code:
+            query = query.filter(DiscoverabilityAuditLog.reason_code == reason_code)
+        if window_minutes is not None:
+            window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+            query = query.filter(DiscoverabilityAuditLog.created_at >= window_start)
+        return query.order_by(DiscoverabilityAuditLog.created_at.desc()).limit(limit).all()
+
+    def list_discoverability_user_summaries(
+        self,
+        db: Session,
+        window_minutes: int = 60,
+        limit: int = 50,
+    ) -> List[dict]:
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+        logs = (
+            db.query(DiscoverabilityAuditLog)
+            .filter(DiscoverabilityAuditLog.created_at >= window_start)
+            .order_by(DiscoverabilityAuditLog.created_at.desc())
+            .all()
+        )
+        by_user = {}
+        for log in logs:
+            stats = by_user.setdefault(
+                log.user_id,
+                {
+                    "user_id": log.user_id,
+                    "total": 0,
+                    "visible_enabled": 0,
+                    "visible_disabled": 0,
+                    "latest_at": None,
+                },
+            )
+            stats["total"] += 1
+            if log.discoverable:
+                stats["visible_enabled"] += 1
+            else:
+                stats["visible_disabled"] += 1
+            if stats["latest_at"] is None or log.created_at > stats["latest_at"]:
+                stats["latest_at"] = log.created_at
+
+        summaries = list(by_user.values())
+        summaries.sort(
+            key=lambda summary: (
+                summary["total"],
+                summary["latest_at"] or datetime.min.replace(tzinfo=timezone.utc),
+                summary["user_id"],
+            ),
+            reverse=True,
+        )
+        return summaries[:limit]
+
     def get_alias_history(
         self,
         db: Session,

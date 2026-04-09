@@ -337,6 +337,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/audit/discoverability-reasons` summary endpoint so compliance can monitor why alias visibility is changing over a rolling window without scanning individual alias records.~~ ✓ Done — added discoverability-change aggregation (`reason_code`, `total`, `latest_at`) with `window_minutes` and `limit` filters; tests cover invalid reason rejection, summary counts, and old-entry exclusion.
 
 Immediate next implementation sequence:
+1. ~~Add raw discoverability-audit query support so compliance and support tooling can retrieve filtered visibility-change events by `user_id` and `reason_code` without scanning all aliases manually (Epic C2).~~ ✓ Done — added `GET /v1/aliases/audit/discoverability` with `user_id`, `reason_code`, `window_minutes`, and `limit` filters, returning ordered discoverability audit events with full metadata.
+2. ~~Add `GET /v1/aliases/audit/discoverability/users` user-level summary endpoint so operators can quickly identify accounts with unusual visibility-toggle activity over a rolling window.~~ ✓ Done — added per-user discoverability aggregates (`total`, `visible_enabled`, `visible_disabled`, `latest_at`) with `window_minutes` and `limit` filters; tests cover filtered audit retrieval, user summary counts, and old-entry exclusion.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives

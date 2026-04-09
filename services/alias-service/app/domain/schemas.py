@@ -175,6 +175,39 @@ class DiscoverabilityReasonSummaryListResponse(BaseModel):
     reasons: List[DiscoverabilityReasonSummaryEntry]
 
 
+class DiscoverabilityAuditEntry(BaseModel):
+    log_id: str
+    alias_id: str
+    user_id: str
+    reason_code: str
+    discoverable: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DiscoverabilityAuditResponse(BaseModel):
+    user_id: Optional[str] = None
+    reason_code: Optional[str] = None
+    window_minutes: Optional[int] = None
+    total: int
+    entries: List[DiscoverabilityAuditEntry]
+
+
+class DiscoverabilityUserSummaryEntry(BaseModel):
+    user_id: str
+    total: int
+    visible_enabled: int
+    visible_disabled: int
+    latest_at: Optional[datetime] = None
+
+
+class DiscoverabilityUserSummaryListResponse(BaseModel):
+    total_users: int
+    window_minutes: int
+    users: List[DiscoverabilityUserSummaryEntry]
+
+
 class UnbindAliasRequest(BaseModel):
     reason_code: str
 

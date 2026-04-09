@@ -16,7 +16,9 @@ from app.domain.schemas import (
     RecycledAliasListResponse,
     AliasResponse,
     BindAliasRequest,
+    DiscoverabilityAuditResponse,
     DiscoverabilityReasonSummaryListResponse,
+    DiscoverabilityUserSummaryListResponse,
     ResolvePurposeAuditSummaryListResponse,
     ResolveAliasResponse,
     ResolveCallerAuditSummaryListResponse,
@@ -239,6 +241,48 @@ def list_discoverability_reason_summaries(
         total_reasons=len(reasons),
         window_minutes=window_minutes,
         reasons=reasons,
+    )
+
+
+@router.get("/v1/aliases/audit/discoverability", response_model=DiscoverabilityAuditResponse)
+def get_discoverability_audit(
+    user_id: Optional[str] = None,
+    reason_code: Optional[str] = None,
+    window_minutes: Optional[int] = Query(default=None, ge=1, le=1440),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    entries = _svc.query_discoverability_audit(
+        db,
+        user_id=user_id,
+        reason_code=reason_code,
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return DiscoverabilityAuditResponse(
+        user_id=user_id,
+        reason_code=reason_code,
+        window_minutes=window_minutes,
+        total=len(entries),
+        entries=entries,
+    )
+
+
+@router.get("/v1/aliases/audit/discoverability/users", response_model=DiscoverabilityUserSummaryListResponse)
+def list_discoverability_user_summaries(
+    window_minutes: int = Query(default=60, ge=1, le=1440),
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    users = _svc.list_discoverability_user_summaries(
+        db,
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return DiscoverabilityUserSummaryListResponse(
+        total_users=len(users),
+        window_minutes=window_minutes,
+        users=users,
     )
 
 
