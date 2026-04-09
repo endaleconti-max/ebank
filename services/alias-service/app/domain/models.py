@@ -58,6 +58,7 @@ class DiscoverabilityAuditLog(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     alias_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    phone_e164: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     reason_code: Mapped[str] = mapped_column(String(128), nullable=False)
     discoverable: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -75,6 +76,7 @@ class UnbindAuditLog(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     alias_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    phone_e164: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     reason_code: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

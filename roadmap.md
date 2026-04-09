@@ -341,6 +341,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/audit/unbind/users` user-level summary endpoint so operators can quickly identify accounts with unusual unbind activity over a rolling window.~~ ✓ Done — added per-user unbind aggregates (`total`, `latest_at`) with `window_minutes` and `limit` filters; tests cover filtered audit retrieval, summary counts, and old-entry exclusion.
 
 Immediate next implementation sequence:
+1. ~~Add phone-number level filtering to raw lifecycle audit endpoints so investigations can pivot by `phone_e164` directly when reviewing unbind or discoverability-change events (Epic C2/C3).~~ ✓ Done — added `phone_e164` to lifecycle audit logs and exposed `phone_e164` filters on `GET /v1/aliases/audit/unbind` and `GET /v1/aliases/audit/discoverability`; responses now echo the applied phone filter and include phone on each audit entry.
+2. ~~Persist `phone_e164` directly on lifecycle audit log rows so audit queries remain efficient and do not require joining back to mutable alias rows for basic phone-based analysis.~~ ✓ Done — added indexed `phone_e164` columns to `UnbindAuditLog` and `DiscoverabilityAuditLog`, populated at write-time; added test coverage for phone-filtered unbind/discoverability audit retrieval.
+
+Immediate next implementation sequence:
 1. ~~Add raw discoverability-audit query support so compliance and support tooling can retrieve filtered visibility-change events by `user_id` and `reason_code` without scanning all aliases manually (Epic C2).~~ ✓ Done — added `GET /v1/aliases/audit/discoverability` with `user_id`, `reason_code`, `window_minutes`, and `limit` filters, returning ordered discoverability audit events with full metadata.
 2. ~~Add `GET /v1/aliases/audit/discoverability/users` user-level summary endpoint so operators can quickly identify accounts with unusual visibility-toggle activity over a rolling window.~~ ✓ Done — added per-user discoverability aggregates (`total`, `visible_enabled`, `visible_disabled`, `latest_at`) with `window_minutes` and `limit` filters; tests cover filtered audit retrieval, user summary counts, and old-entry exclusion.
 

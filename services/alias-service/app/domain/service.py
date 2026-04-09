@@ -113,6 +113,7 @@ class AliasService:
         db.add(
             UnbindAuditLog(
                 alias_id=alias.alias_id,
+                phone_e164=alias.phone_e164,
                 user_id=alias.user_id,
                 reason_code=req.reason_code,
                 created_at=unbound_at,
@@ -136,6 +137,7 @@ class AliasService:
         db.add(
             DiscoverabilityAuditLog(
                 alias_id=alias.alias_id,
+                phone_e164=alias.phone_e164,
                 user_id=alias.user_id,
                 reason_code=req.reason_code,
                 discoverable=req.discoverable,
@@ -422,12 +424,15 @@ class AliasService:
     def query_unbind_audit(
         self,
         db: Session,
+        phone_e164: Optional[str] = None,
         user_id: Optional[str] = None,
         reason_code: Optional[str] = None,
         window_minutes: Optional[int] = None,
         limit: int = 100,
     ) -> List[UnbindAuditLog]:
         query = db.query(UnbindAuditLog)
+        if phone_e164:
+            query = query.filter(UnbindAuditLog.phone_e164 == phone_e164)
         if user_id:
             query = query.filter(UnbindAuditLog.user_id == user_id)
         if reason_code:
@@ -519,12 +524,15 @@ class AliasService:
     def query_discoverability_audit(
         self,
         db: Session,
+        phone_e164: Optional[str] = None,
         user_id: Optional[str] = None,
         reason_code: Optional[str] = None,
         window_minutes: Optional[int] = None,
         limit: int = 100,
     ) -> List[DiscoverabilityAuditLog]:
         query = db.query(DiscoverabilityAuditLog)
+        if phone_e164:
+            query = query.filter(DiscoverabilityAuditLog.phone_e164 == phone_e164)
         if user_id:
             query = query.filter(DiscoverabilityAuditLog.user_id == user_id)
         if reason_code:

@@ -230,6 +230,7 @@ def list_unbind_reason_summaries(
 
 @router.get("/v1/aliases/audit/unbind", response_model=UnbindAuditResponse)
 def get_unbind_audit(
+    phone_e164: Optional[str] = None,
     user_id: Optional[str] = None,
     reason_code: Optional[str] = None,
     window_minutes: Optional[int] = Query(default=None, ge=1, le=1440),
@@ -238,12 +239,14 @@ def get_unbind_audit(
 ):
     entries = _svc.query_unbind_audit(
         db,
+        phone_e164=phone_e164,
         user_id=user_id,
         reason_code=reason_code,
         window_minutes=window_minutes,
         limit=limit,
     )
     return UnbindAuditResponse(
+        phone_e164=phone_e164,
         user_id=user_id,
         reason_code=reason_code,
         window_minutes=window_minutes,
@@ -290,6 +293,7 @@ def list_discoverability_reason_summaries(
 
 @router.get("/v1/aliases/audit/discoverability", response_model=DiscoverabilityAuditResponse)
 def get_discoverability_audit(
+    phone_e164: Optional[str] = None,
     user_id: Optional[str] = None,
     reason_code: Optional[str] = None,
     window_minutes: Optional[int] = Query(default=None, ge=1, le=1440),
@@ -298,12 +302,14 @@ def get_discoverability_audit(
 ):
     entries = _svc.query_discoverability_audit(
         db,
+        phone_e164=phone_e164,
         user_id=user_id,
         reason_code=reason_code,
         window_minutes=window_minutes,
         limit=limit,
     )
     return DiscoverabilityAuditResponse(
+        phone_e164=phone_e164,
         user_id=user_id,
         reason_code=reason_code,
         window_minutes=window_minutes,

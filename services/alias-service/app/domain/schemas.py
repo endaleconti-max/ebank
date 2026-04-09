@@ -166,6 +166,7 @@ class UnbindReasonSummaryListResponse(BaseModel):
 class UnbindAuditEntry(BaseModel):
     log_id: str
     alias_id: str
+    phone_e164: str
     user_id: str
     reason_code: str
     created_at: datetime
@@ -174,6 +175,7 @@ class UnbindAuditEntry(BaseModel):
 
 
 class UnbindAuditResponse(BaseModel):
+    phone_e164: Optional[str] = None
     user_id: Optional[str] = None
     reason_code: Optional[str] = None
     window_minutes: Optional[int] = None
@@ -208,6 +210,7 @@ class DiscoverabilityReasonSummaryListResponse(BaseModel):
 class DiscoverabilityAuditEntry(BaseModel):
     log_id: str
     alias_id: str
+    phone_e164: str
     user_id: str
     reason_code: str
     discoverable: bool
@@ -217,6 +220,7 @@ class DiscoverabilityAuditEntry(BaseModel):
 
 
 class DiscoverabilityAuditResponse(BaseModel):
+    phone_e164: Optional[str] = None
     user_id: Optional[str] = None
     reason_code: Optional[str] = None
     window_minutes: Optional[int] = None

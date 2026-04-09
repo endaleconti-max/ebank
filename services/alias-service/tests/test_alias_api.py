@@ -900,6 +900,30 @@ def test_unbind_audit_filters_by_user_and_reason() -> None:
     assert body["entries"][0]["reason_code"] == "user-request"
 
 
+def test_unbind_audit_filters_by_phone_e164() -> None:
+    phone = "+15550009996"
+    otp = "654321"
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone, "otp_code": otp})
+    verify = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone, "otp_code": otp})
+    bind = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify.json()["verification_id"], "user_id": "u-unbind-phone"},
+    )
+    alias_id = bind.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "user-request"})
+
+    audit = client.get(
+        "/v1/aliases/audit/unbind",
+        params={"phone_e164": phone, "limit": 10},
+    )
+    assert audit.status_code == 200
+    body = audit.json()
+    assert body["phone_e164"] == phone
+    assert body["total"] == 1
+    assert body["entries"][0]["phone_e164"] == phone
+
+
 def test_unbind_user_summary_lists_users() -> None:
     phone_a = "+15550009993"
     phone_b = "+15550009994"
@@ -1049,6 +1073,33 @@ def test_discoverability_audit_filters_by_user_id_and_reason() -> None:
     assert body["reason_code"] == "support-guided"
     assert body["total"] == 1
     assert body["entries"][0]["reason_code"] == "support-guided"
+
+
+def test_discoverability_audit_filters_by_phone_e164() -> None:
+    phone = "+15550009997"
+    otp = "654321"
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone, "otp_code": otp})
+    verify = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone, "otp_code": otp})
+    bind = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify.json()["verification_id"], "user_id": "u-disc-phone", "discoverable": True},
+    )
+    alias_id = bind.json()["alias_id"]
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": False, "reason_code": "privacy-request"},
+    )
+
+    audit = client.get(
+        "/v1/aliases/audit/discoverability",
+        params={"phone_e164": phone, "limit": 10},
+    )
+    assert audit.status_code == 200
+    body = audit.json()
+    assert body["phone_e164"] == phone
+    assert body["total"] == 1
+    assert body["entries"][0]["phone_e164"] == phone
 
 
 def test_discoverability_user_summary_lists_users() -> None:
