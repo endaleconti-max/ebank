@@ -119,6 +119,22 @@ class ResolveCallerAuditSummaryListResponse(BaseModel):
     callers: List[ResolveCallerAuditSummaryEntry]
 
 
+class ResolvePurposeAuditSummaryEntry(BaseModel):
+    purpose: str
+    total: int
+    found: int
+    not_found: int
+    blocked: int
+    latest_at: Optional[datetime] = None
+
+
+class ResolvePurposeAuditSummaryListResponse(BaseModel):
+    total_purposes: int
+    lookup_scope: str
+    window_minutes: int
+    purposes: List[ResolvePurposeAuditSummaryEntry]
+
+
 class UnbindAliasRequest(BaseModel):
     reason_code: str
 

@@ -18,6 +18,12 @@ from app.domain.schemas import BindAliasRequest, UnbindAliasRequest, UpdateDisco
 class AliasService:
     RESOLVE_FAILURE_WINDOW_MINUTES = 60
     RESOLVE_FAILURE_LIMIT = 3
+    INTERNAL_RESOLVE_PURPOSES = (
+        "support-review",
+        "compliance-review",
+        "fraud-investigation",
+        "dispute-review",
+    )
 
     def verify_phone(self, db: Session, req: VerifyPhoneRequest) -> PhoneVerification:
         existing = (
@@ -293,6 +299,59 @@ class AliasService:
                 summary["not_found"],
                 summary["total"],
                 summary["caller_id"],
+            ),
+            reverse=True,
+        )
+        return summaries[:limit]
+
+    def list_resolve_audit_purpose_summaries(
+        self,
+        db: Session,
+        lookup_scope: str = "INTERNAL",
+        window_minutes: int = 60,
+        limit: int = 50,
+    ) -> List[dict]:
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+        entries = (
+            db.query(ResolveAuditLog)
+            .filter(
+                ResolveAuditLog.lookup_scope == lookup_scope,
+                ResolveAuditLog.created_at >= window_start,
+            )
+            .order_by(ResolveAuditLog.created_at.desc())
+            .all()
+        )
+        by_purpose = {}
+        for entry in entries:
+            purpose_key = entry.purpose or "(none)"
+            stats = by_purpose.setdefault(
+                purpose_key,
+                {
+                    "purpose": purpose_key,
+                    "total": 0,
+                    "found": 0,
+                    "not_found": 0,
+                    "blocked": 0,
+                    "latest_at": None,
+                },
+            )
+            stats["total"] += 1
+            if entry.blocked:
+                stats["blocked"] += 1
+            elif entry.result_found:
+                stats["found"] += 1
+            else:
+                stats["not_found"] += 1
+            if stats["latest_at"] is None or entry.created_at > stats["latest_at"]:
+                stats["latest_at"] = entry.created_at
+
+        summaries = list(by_purpose.values())
+        summaries.sort(
+            key=lambda summary: (
+                summary["blocked"],
+                summary["not_found"],
+                summary["total"],
+                summary["purpose"],
             ),
             reverse=True,
         )

@@ -16,6 +16,7 @@ from app.domain.schemas import (
     RecycledAliasListResponse,
     AliasResponse,
     BindAliasRequest,
+    ResolvePurposeAuditSummaryListResponse,
     ResolveAliasResponse,
     ResolveCallerAuditSummaryListResponse,
     ResolveAuditResponse,
@@ -101,6 +102,11 @@ def resolve_alias_internal(
     caller_id = request.headers.get("X-Caller-Id")
     if not caller_id:
         raise HTTPException(status_code=422, detail="X-Caller-Id header is required")
+    if purpose not in _svc.INTERNAL_RESOLVE_PURPOSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid internal resolve purpose. Allowed: {', '.join(_svc.INTERNAL_RESOLVE_PURPOSES)}",
+        )
     try:
         alias = _svc.resolve_alias_internal(
             db,
@@ -172,6 +178,29 @@ def list_resolve_audit_callers(
         total_callers=len(callers),
         window_minutes=window_minutes,
         callers=callers,
+    )
+
+
+@router.get("/v1/aliases/audit/resolve/purposes", response_model=ResolvePurposeAuditSummaryListResponse)
+def list_resolve_audit_purposes(
+    lookup_scope: str = Query(default="INTERNAL"),
+    window_minutes: int = Query(default=60, ge=1, le=1440),
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    if lookup_scope not in {"PUBLIC", "INTERNAL"}:
+        raise HTTPException(status_code=422, detail="Invalid lookup scope filter")
+    purposes = _svc.list_resolve_audit_purpose_summaries(
+        db,
+        lookup_scope=lookup_scope,
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return ResolvePurposeAuditSummaryListResponse(
+        total_purposes=len(purposes),
+        lookup_scope=lookup_scope,
+        window_minutes=window_minutes,
+        purposes=purposes,
     )
 
 

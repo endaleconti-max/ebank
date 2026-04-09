@@ -162,6 +162,15 @@ def test_internal_resolve_requires_caller_id_header() -> None:
     assert resp.status_code == 422
 
 
+def test_internal_resolve_rejects_invalid_purpose() -> None:
+    resp = client.get(
+        "/v1/aliases/resolve/internal",
+        params={"phone_e164": PHONE, "purpose": "debug"},
+        headers={"X-Caller-Id": "svc-support"},
+    )
+    assert resp.status_code == 422
+
+
 def test_get_alias_by_id_still_returns_undiscoverable_alias() -> None:
     verification_id = _do_two_step_verify()
     bind_resp = client.post(
@@ -730,3 +739,41 @@ def test_resolve_callers_summary_blocked_only_filters_non_blocked_callers() -> N
     caller_ids = [entry["caller_id"] for entry in body["callers"]]
     assert "svc-block-only" in caller_ids
     assert "svc-clean" not in caller_ids
+
+
+def test_resolve_purpose_summary_lists_internal_purposes() -> None:
+    verification_id = _do_two_step_verify()
+    client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-purpose", "discoverable": False},
+    )
+    client.get(
+        "/v1/aliases/resolve/internal",
+        params={"phone_e164": PHONE, "purpose": "support-review"},
+        headers={"X-Caller-Id": "svc-purpose"},
+    )
+    client.get(
+        "/v1/aliases/resolve/internal",
+        params={"phone_e164": PHONE, "purpose": "compliance-review"},
+        headers={"X-Caller-Id": "svc-purpose"},
+    )
+
+    summary = client.get(
+        "/v1/aliases/audit/resolve/purposes",
+        params={"lookup_scope": "INTERNAL", "window_minutes": 60},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["lookup_scope"] == "INTERNAL"
+    assert body["total_purposes"] >= 2
+    purposes = [entry["purpose"] for entry in body["purposes"]]
+    assert "support-review" in purposes
+    assert "compliance-review" in purposes
+
+
+def test_resolve_purpose_summary_rejects_invalid_lookup_scope() -> None:
+    resp = client.get(
+        "/v1/aliases/audit/resolve/purposes",
+        params={"lookup_scope": "BROKEN"},
+    )
+    assert resp.status_code == 422

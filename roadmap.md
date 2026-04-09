@@ -325,6 +325,10 @@ Immediate next implementation sequence:
 2. ~~Extend resolve-audit records and filtering with lookup scope/purpose so investigators can distinguish public lookups from internal support/compliance access when reviewing alias-resolution activity.~~ ✓ Done — `ResolveAuditLog` now stores `lookup_scope` and `purpose`; audit responses expose both fields and `GET /v1/aliases/audit/resolve` supports `lookup_scope=PUBLIC|INTERNAL` filtering with 422 validation for invalid values.
 
 Immediate next implementation sequence:
+1. ~~Introduce a controlled internal resolve purpose taxonomy so support/compliance lookups cannot use arbitrary free-form purpose strings and downstream reporting stays consistent (Epic C2).~~ ✓ Done — internal resolve now validates `purpose` against an allowed set (`support-review`, `compliance-review`, `fraud-investigation`, `dispute-review`) and returns 422 for invalid values.
+2. ~~Add `GET /v1/aliases/audit/resolve/purposes` purpose-summary endpoint so teams can monitor which internal purposes drive hidden-alias lookups over a rolling window.~~ ✓ Done — added purpose-level aggregate reporting (`total`, `found`, `not_found`, `blocked`, `latest_at`) with `lookup_scope`, `window_minutes`, and `limit` filters; tests cover valid summaries and invalid scope validation.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives
