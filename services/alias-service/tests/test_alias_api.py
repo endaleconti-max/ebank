@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.domain.models import Alias, DiscoverabilityAuditLog, ResolveAuditLog
+from app.domain.models import Alias, DiscoverabilityAuditLog, ResolveAuditLog, UnbindAuditLog
 from app.infrastructure.db import Base, engine
 from app.infrastructure.db import SessionLocal
 from app.main import app
@@ -852,8 +852,8 @@ def test_unbind_reason_summary_excludes_old_unbinds() -> None:
     client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "move"})
 
     with SessionLocal() as db:
-        alias = db.query(Alias).filter(Alias.alias_id == alias_id).first()
-        alias.unbound_at = alias.unbound_at.replace(year=alias.unbound_at.year - 1)
+        log = db.query(UnbindAuditLog).filter(UnbindAuditLog.alias_id == alias_id).first()
+        log.created_at = log.created_at.replace(year=log.created_at.year - 1)
         db.commit()
 
     summary = client.get(
@@ -863,6 +863,110 @@ def test_unbind_reason_summary_excludes_old_unbinds() -> None:
     assert summary.status_code == 200
     body = summary.json()
     assert all(entry["reason_code"] != "move" for entry in body["reasons"])
+
+
+def test_unbind_audit_filters_by_user_and_reason() -> None:
+    phone_a = "+15550009991"
+    phone_b = "+15550009992"
+    otp = "654321"
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_a, "otp_code": otp})
+    verify_a = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_a, "otp_code": otp})
+    bind_a = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify_a.json()["verification_id"], "user_id": "u-unbind-audit-a"},
+    )
+    alias_a = bind_a.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_a}/unbind", json={"reason_code": "user-request"})
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_b, "otp_code": otp})
+    verify_b = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_b, "otp_code": otp})
+    bind_b = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify_b.json()["verification_id"], "user_id": "u-unbind-audit-b"},
+    )
+    alias_b = bind_b.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_b}/unbind", json={"reason_code": "number-change"})
+
+    audit = client.get(
+        "/v1/aliases/audit/unbind",
+        params={"user_id": "u-unbind-audit-a", "reason_code": "user-request", "limit": 10},
+    )
+    assert audit.status_code == 200
+    body = audit.json()
+    assert body["user_id"] == "u-unbind-audit-a"
+    assert body["reason_code"] == "user-request"
+    assert body["total"] == 1
+    assert body["entries"][0]["reason_code"] == "user-request"
+
+
+def test_unbind_user_summary_lists_users() -> None:
+    phone_a = "+15550009993"
+    phone_b = "+15550009994"
+    otp = "654321"
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_a, "otp_code": otp})
+    verify_a = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_a, "otp_code": otp})
+    bind_a = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify_a.json()["verification_id"], "user_id": "u-unbind-summary-a"},
+    )
+    client.post(f"/v1/aliases/{bind_a.json()['alias_id']}/unbind", json={"reason_code": "user-request"})
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_b, "otp_code": otp})
+    verify_b = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_b, "otp_code": otp})
+    bind_b = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify_b.json()["verification_id"], "user_id": "u-unbind-summary-b"},
+    )
+    alias_b = bind_b.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_b}/unbind", json={"reason_code": "number-change"})
+
+    # Rebind and unbind again for user b to create higher activity
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_b, "otp_code": otp})
+    verify_b2 = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_b, "otp_code": otp})
+    bind_b2 = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify_b2.json()["verification_id"], "user_id": "u-unbind-summary-b"},
+    )
+    client.post(f"/v1/aliases/{bind_b2.json()['alias_id']}/unbind", json={"reason_code": "move"})
+
+    summary = client.get(
+        "/v1/aliases/audit/unbind/users",
+        params={"window_minutes": 60, "limit": 10},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["total_users"] >= 2
+    users = {entry["user_id"]: entry for entry in body["users"]}
+    assert users["u-unbind-summary-a"]["total"] == 1
+    assert users["u-unbind-summary-b"]["total"] == 2
+
+
+def test_unbind_user_summary_excludes_old_entries() -> None:
+    phone_a = "+15550009995"
+    otp = "654321"
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_a, "otp_code": otp})
+    verify_a = client.post("/v1/aliases/verify-phone", json={"phone_e164": phone_a, "otp_code": otp})
+    bind_a = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify_a.json()["verification_id"], "user_id": "u-unbind-old"},
+    )
+    alias_a = bind_a.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_a}/unbind", json={"reason_code": "user-request"})
+
+    with SessionLocal() as db:
+        log = db.query(UnbindAuditLog).filter(UnbindAuditLog.alias_id == alias_a).first()
+        log.created_at = log.created_at.replace(year=log.created_at.year - 1)
+        db.commit()
+
+    summary = client.get(
+        "/v1/aliases/audit/unbind/users",
+        params={"window_minutes": 60},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert all(entry["user_id"] != "u-unbind-old" for entry in body["users"])
 
 
 def test_discoverability_reason_summary_counts_reason_codes() -> None:

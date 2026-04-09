@@ -163,6 +163,36 @@ class UnbindReasonSummaryListResponse(BaseModel):
     reasons: List[UnbindReasonSummaryEntry]
 
 
+class UnbindAuditEntry(BaseModel):
+    log_id: str
+    alias_id: str
+    user_id: str
+    reason_code: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class UnbindAuditResponse(BaseModel):
+    user_id: Optional[str] = None
+    reason_code: Optional[str] = None
+    window_minutes: Optional[int] = None
+    total: int
+    entries: List[UnbindAuditEntry]
+
+
+class UnbindUserSummaryEntry(BaseModel):
+    user_id: str
+    total: int
+    latest_at: Optional[datetime] = None
+
+
+class UnbindUserSummaryListResponse(BaseModel):
+    total_users: int
+    window_minutes: int
+    users: List[UnbindUserSummaryEntry]
+
+
 class DiscoverabilityReasonSummaryEntry(BaseModel):
     reason_code: str
     total: int

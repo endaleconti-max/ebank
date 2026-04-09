@@ -11,7 +11,7 @@ from app.domain.errors import (
     ResolveLookupRateLimitedError,
     VerificationNotFoundError,
 )
-from app.domain.models import Alias, AliasStatus, DiscoverabilityAuditLog, PhoneVerification, ResolveAuditLog
+from app.domain.models import Alias, AliasStatus, DiscoverabilityAuditLog, PhoneVerification, ResolveAuditLog, UnbindAuditLog
 from app.domain.schemas import BindAliasRequest, UnbindAliasRequest, UpdateDiscoverableRequest, VerifyPhoneRequest
 
 
@@ -105,10 +105,19 @@ class AliasService:
         alias = db.query(Alias).filter(Alias.alias_id == alias_id).first()
         if alias is None:
             raise AliasNotFoundError(alias_id)
+        unbound_at = datetime.now(timezone.utc)
         alias.status = AliasStatus.UNBOUND
-        alias.unbound_at = datetime.now(timezone.utc)
+        alias.unbound_at = unbound_at
         alias.unbound_reason = req.reason_code
-        alias.updated_at = datetime.now(timezone.utc)
+        alias.updated_at = unbound_at
+        db.add(
+            UnbindAuditLog(
+                alias_id=alias.alias_id,
+                user_id=alias.user_id,
+                reason_code=req.reason_code,
+                created_at=unbound_at,
+            )
+        )
         db.commit()
         db.refresh(alias)
         return alias
@@ -376,20 +385,17 @@ class AliasService:
         limit: int = 50,
     ) -> List[dict]:
         window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
-        aliases = (
-            db.query(Alias)
+        logs = (
+            db.query(UnbindAuditLog)
             .filter(
-                Alias.status == AliasStatus.UNBOUND,
-                Alias.unbound_reason.is_not(None),
-                Alias.unbound_at.is_not(None),
-                Alias.unbound_at >= window_start,
+                UnbindAuditLog.created_at >= window_start,
             )
-            .order_by(Alias.unbound_at.desc())
+            .order_by(UnbindAuditLog.created_at.desc())
             .all()
         )
         by_reason = {}
-        for alias in aliases:
-            reason_key = alias.unbound_reason or "(none)"
+        for log in logs:
+            reason_key = log.reason_code
             stats = by_reason.setdefault(
                 reason_key,
                 {
@@ -399,8 +405,8 @@ class AliasService:
                 },
             )
             stats["total"] += 1
-            if stats["latest_at"] is None or alias.unbound_at > stats["latest_at"]:
-                stats["latest_at"] = alias.unbound_at
+            if stats["latest_at"] is None or log.created_at > stats["latest_at"]:
+                stats["latest_at"] = log.created_at
 
         summaries = list(by_reason.values())
         summaries.sort(
@@ -408,6 +414,62 @@ class AliasService:
                 summary["total"],
                 summary["latest_at"] or datetime.min.replace(tzinfo=timezone.utc),
                 summary["reason_code"],
+            ),
+            reverse=True,
+        )
+        return summaries[:limit]
+
+    def query_unbind_audit(
+        self,
+        db: Session,
+        user_id: Optional[str] = None,
+        reason_code: Optional[str] = None,
+        window_minutes: Optional[int] = None,
+        limit: int = 100,
+    ) -> List[UnbindAuditLog]:
+        query = db.query(UnbindAuditLog)
+        if user_id:
+            query = query.filter(UnbindAuditLog.user_id == user_id)
+        if reason_code:
+            query = query.filter(UnbindAuditLog.reason_code == reason_code)
+        if window_minutes is not None:
+            window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+            query = query.filter(UnbindAuditLog.created_at >= window_start)
+        return query.order_by(UnbindAuditLog.created_at.desc()).limit(limit).all()
+
+    def list_unbind_user_summaries(
+        self,
+        db: Session,
+        window_minutes: int = 60,
+        limit: int = 50,
+    ) -> List[dict]:
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+        logs = (
+            db.query(UnbindAuditLog)
+            .filter(UnbindAuditLog.created_at >= window_start)
+            .order_by(UnbindAuditLog.created_at.desc())
+            .all()
+        )
+        by_user = {}
+        for log in logs:
+            stats = by_user.setdefault(
+                log.user_id,
+                {
+                    "user_id": log.user_id,
+                    "total": 0,
+                    "latest_at": None,
+                },
+            )
+            stats["total"] += 1
+            if stats["latest_at"] is None or log.created_at > stats["latest_at"]:
+                stats["latest_at"] = log.created_at
+
+        summaries = list(by_user.values())
+        summaries.sort(
+            key=lambda summary: (
+                summary["total"],
+                summary["latest_at"] or datetime.min.replace(tzinfo=timezone.utc),
+                summary["user_id"],
             ),
             reverse=True,
         )

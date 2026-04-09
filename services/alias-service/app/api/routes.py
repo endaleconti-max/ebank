@@ -24,7 +24,9 @@ from app.domain.schemas import (
     ResolveCallerAuditSummaryListResponse,
     ResolveAuditResponse,
     ResolveAuditSummaryResponse,
+    UnbindAuditResponse,
     UnbindReasonSummaryListResponse,
+    UnbindUserSummaryListResponse,
     UndiscoverableAliasListResponse,
     UnbindAliasRequest,
     UpdateDiscoverableRequest,
@@ -223,6 +225,48 @@ def list_unbind_reason_summaries(
         total_reasons=len(reasons),
         window_minutes=window_minutes,
         reasons=reasons,
+    )
+
+
+@router.get("/v1/aliases/audit/unbind", response_model=UnbindAuditResponse)
+def get_unbind_audit(
+    user_id: Optional[str] = None,
+    reason_code: Optional[str] = None,
+    window_minutes: Optional[int] = Query(default=None, ge=1, le=1440),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    entries = _svc.query_unbind_audit(
+        db,
+        user_id=user_id,
+        reason_code=reason_code,
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return UnbindAuditResponse(
+        user_id=user_id,
+        reason_code=reason_code,
+        window_minutes=window_minutes,
+        total=len(entries),
+        entries=entries,
+    )
+
+
+@router.get("/v1/aliases/audit/unbind/users", response_model=UnbindUserSummaryListResponse)
+def list_unbind_user_summaries(
+    window_minutes: int = Query(default=60, ge=1, le=1440),
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    users = _svc.list_unbind_user_summaries(
+        db,
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return UnbindUserSummaryListResponse(
+        total_users=len(users),
+        window_minutes=window_minutes,
+        users=users,
     )
 
 

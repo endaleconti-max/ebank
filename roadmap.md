@@ -337,6 +337,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/audit/discoverability-reasons` summary endpoint so compliance can monitor why alias visibility is changing over a rolling window without scanning individual alias records.~~ ✓ Done — added discoverability-change aggregation (`reason_code`, `total`, `latest_at`) with `window_minutes` and `limit` filters; tests cover invalid reason rejection, summary counts, and old-entry exclusion.
 
 Immediate next implementation sequence:
+1. ~~Add raw unbind-audit query support so compliance and support tooling can retrieve filtered alias-unbind events by `user_id` and `reason_code` without scanning all alias records manually (Epic C3).~~ ✓ Done — added `GET /v1/aliases/audit/unbind` with `user_id`, `reason_code`, `window_minutes`, and `limit` filters returning ordered unbind audit events.
+2. ~~Add `GET /v1/aliases/audit/unbind/users` user-level summary endpoint so operators can quickly identify accounts with unusual unbind activity over a rolling window.~~ ✓ Done — added per-user unbind aggregates (`total`, `latest_at`) with `window_minutes` and `limit` filters; tests cover filtered audit retrieval, summary counts, and old-entry exclusion.
+
+Immediate next implementation sequence:
 1. ~~Add raw discoverability-audit query support so compliance and support tooling can retrieve filtered visibility-change events by `user_id` and `reason_code` without scanning all aliases manually (Epic C2).~~ ✓ Done — added `GET /v1/aliases/audit/discoverability` with `user_id`, `reason_code`, `window_minutes`, and `limit` filters, returning ordered discoverability audit events with full metadata.
 2. ~~Add `GET /v1/aliases/audit/discoverability/users` user-level summary endpoint so operators can quickly identify accounts with unusual visibility-toggle activity over a rolling window.~~ ✓ Done — added per-user discoverability aggregates (`total`, `visible_enabled`, `visible_disabled`, `latest_at`) with `window_minutes` and `limit` filters; tests cover filtered audit retrieval, user summary counts, and old-entry exclusion.
 

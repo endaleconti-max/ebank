@@ -68,6 +68,22 @@ class DiscoverabilityAuditLog(Base):
     )
 
 
+class UnbindAuditLog(Base):
+    __tablename__ = "unbind_audit_logs"
+
+    log_id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    alias_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reason_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
 class Alias(Base):
     __tablename__ = "aliases"
 
