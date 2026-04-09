@@ -8,6 +8,7 @@ from app.clients.identity_client import IdentityClient
 from app.clients.orchestrator_client import OrchestratorClient
 from app.clients.reconciliation_client import ReconciliationClient
 from app.config import settings
+from app.domain.authorization_audit import get_authorization_audit_store
 from app.domain.auth_models import Permission
 
 router = APIRouter(prefix="/v1", tags=["api-gateway"])
@@ -16,6 +17,7 @@ _connector_client = ConnectorClient()
 _reconciliation_client = ReconciliationClient()
 _identity_client = IdentityClient()
 _alias_client = AliasClient()
+_authz_audit_store = get_authorization_audit_store()
 
 TransferEventStatusFilter = Literal[
     "CREATED",
@@ -46,13 +48,67 @@ def _authorize(request: Request, permission: Permission) -> None:
     if not settings.enforce_authorization:
         return
     identity = getattr(request.state, "identity", None)
+    caller_id = getattr(identity, "caller_id", "unknown") if identity else "unknown"
+    request_id = getattr(request.state, "request_id", "")
     if identity is None:
+        _authz_audit_store.record(
+            caller_id=caller_id,
+            method=request.method,
+            path=request.url.path,
+            required_permission=permission.value,
+            allowed=False,
+            reason="missing_identity",
+            request_id=request_id,
+        )
         raise HTTPException(status_code=401, detail="missing authenticated identity")
     if not identity.has_permission(permission):
+        _authz_audit_store.record(
+            caller_id=caller_id,
+            method=request.method,
+            path=request.url.path,
+            required_permission=permission.value,
+            allowed=False,
+            reason="missing_permission",
+            request_id=request_id,
+        )
         raise HTTPException(
             status_code=403,
             detail=f"missing required permission: {permission.value}",
         )
+    _authz_audit_store.record(
+        caller_id=caller_id,
+        method=request.method,
+        path=request.url.path,
+        required_permission=permission.value,
+        allowed=True,
+        reason="authorized",
+        request_id=request_id,
+    )
+
+
+@router.get("/auth/audit/authorization")
+async def list_authorization_audit(
+    request: Request,
+    caller_id: Optional[str] = None,
+    allowed: Optional[bool] = None,
+    window_minutes: Optional[int] = None,
+    limit: int = 100,
+):
+    _authorize(request, Permission.VIEW_AUTH_AUDIT)
+    rows = _authz_audit_store.query(
+        caller_id=caller_id,
+        allowed=allowed,
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return {
+        "total": len(rows),
+        "caller_id": caller_id,
+        "allowed": allowed,
+        "window_minutes": window_minutes,
+        "limit": limit,
+        "entries": rows,
+    }
 
 
 @router.post("/transfers")

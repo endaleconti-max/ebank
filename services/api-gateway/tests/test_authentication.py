@@ -283,6 +283,8 @@ class TestAuthorizationHelper:
     def test_authorize_allows_with_permission(self):
         original = settings.enforce_authorization
         settings.enforce_authorization = True
+            store = get_authorization_audit_store()
+            store.clear()
         try:
             mock_request = MagicMock(spec=Request)
             mock_request.state.identity = RequestIdentity(
@@ -291,24 +293,34 @@ class TestAuthorizationHelper:
                 permissions=[Permission.LIST_TRANSFERS],
             )
             _authorize(mock_request, Permission.LIST_TRANSFERS)
+                rows = store.query(caller_id="admin-user-001", allowed=True, limit=1)
+                assert len(rows) == 1
+                assert rows[0]["reason"] == "authorized"
         finally:
             settings.enforce_authorization = original
 
     def test_authorize_raises_401_without_identity(self):
         original = settings.enforce_authorization
         settings.enforce_authorization = True
+            store = get_authorization_audit_store()
+            store.clear()
         try:
             mock_request = MagicMock(spec=Request)
             mock_request.state.identity = None
             with pytest.raises(Exception) as exc_info:
                 _authorize(mock_request, Permission.LIST_TRANSFERS)
             assert getattr(exc_info.value, "status_code", None) == 401
+                rows = store.query(caller_id="unknown", allowed=False, limit=1)
+                assert len(rows) == 1
+                assert rows[0]["reason"] == "missing_identity"
         finally:
             settings.enforce_authorization = original
 
     def test_authorize_raises_403_without_permission(self):
         original = settings.enforce_authorization
         settings.enforce_authorization = True
+            store = get_authorization_audit_store()
+            store.clear()
         try:
             mock_request = MagicMock(spec=Request)
             mock_request.state.identity = RequestIdentity(
@@ -319,5 +331,8 @@ class TestAuthorizationHelper:
             with pytest.raises(Exception) as exc_info:
                 _authorize(mock_request, Permission.RUN_RECONCILIATION)
             assert getattr(exc_info.value, "status_code", None) == 403
+                rows = store.query(caller_id="user-app-001", allowed=False, limit=1)
+                assert len(rows) == 1
+                assert rows[0]["reason"] == "missing_permission"
         finally:
             settings.enforce_authorization = original
