@@ -1,5 +1,8 @@
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.responses import JSONResponse
 
 from app.api.routes import router
 from app.config import settings
@@ -20,4 +23,16 @@ app.add_middleware(
 )
 if settings.enforce_idempotency:
     app.add_middleware(IdempotencyMiddleware)
+
+
+# Exception handlers for proper error responses
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=getattr(exc, "headers", {}),
+    )
+
+
 app.include_router(router)

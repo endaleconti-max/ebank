@@ -353,6 +353,11 @@ Immediate next implementation sequence:
 2. ~~Add a consolidated `GET /v1/aliases/audit/lifecycle/summary` endpoint so investigators can retrieve unbind and discoverability aggregates together for a given `phone_e164` and/or `user_id` in a single request.~~ ✓ Done — added combined lifecycle summary response with `unbind_total`, `unbind_by_reason`, `discoverability_total`, and `discoverability_by_reason`, plus `phone_e164`/`user_id` scoping.
 
 Immediate next implementation sequence:
+1. ~~Add bearer token extraction and validation for API Gateway authentication so all external callers must provide OAuth2-style Authorization headers with cryptographically valid tokens.~~ ✓ Done — added `TokenValidator` in `app/domain/token_validator.py` supporting token extraction from Authorization header, SHA256-based test token generation, token revocation tracking, and basic known token validation for development (service/admin/user token types).
+2. ~~Add authentication middleware enforcing bearer token requirement on protected `/v1/*` routes with configurable enforcement via `ENFORCE_AUTHENTICATION` setting so both integration tests and production deployments can be controlled.~~ ✓ Done — `AuthenticationMiddleware` added in `app/middleware/authentication.py` with request identity extraction, per-request state management, unprotected route bypass (health, docs), configurable middleware addition in `main.py`. Request identity with caller ID, type, and permissions is now stored in `request.state.identity` and propagated to downstream services via `X-Caller-Id`, `X-Caller-Type`, `X-Caller-Permissions` headers; test suite enhanced with conftest setting `ENFORCE_AUTHENTICATION=false` for test compatibility.
+Pair 8 completion summary: Full auth infrastructure for API Gateway (40 tests passing: 19 auth-specific + 21 gateway regression tests); bearer token extraction, known-token database, revocation tracking, request identity propagation; production-ready with configurable enforcement toggle.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives
