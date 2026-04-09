@@ -16,6 +16,7 @@ from app.domain.schemas import (
     RecycledAliasListResponse,
     AliasResponse,
     BindAliasRequest,
+    DiscoverabilityReasonSummaryListResponse,
     ResolvePurposeAuditSummaryListResponse,
     ResolveAliasResponse,
     ResolveCallerAuditSummaryListResponse,
@@ -217,6 +218,24 @@ def list_unbind_reason_summaries(
         limit=limit,
     )
     return UnbindReasonSummaryListResponse(
+        total_reasons=len(reasons),
+        window_minutes=window_minutes,
+        reasons=reasons,
+    )
+
+
+@router.get("/v1/aliases/audit/discoverability-reasons", response_model=DiscoverabilityReasonSummaryListResponse)
+def list_discoverability_reason_summaries(
+    window_minutes: int = Query(default=60, ge=1, le=1440),
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    reasons = _svc.list_discoverability_reason_summaries(
+        db,
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return DiscoverabilityReasonSummaryListResponse(
         total_reasons=len(reasons),
         window_minutes=window_minutes,
         reasons=reasons,

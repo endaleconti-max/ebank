@@ -11,7 +11,7 @@ from app.domain.errors import (
     ResolveLookupRateLimitedError,
     VerificationNotFoundError,
 )
-from app.domain.models import Alias, AliasStatus, PhoneVerification, ResolveAuditLog
+from app.domain.models import Alias, AliasStatus, DiscoverabilityAuditLog, PhoneVerification, ResolveAuditLog
 from app.domain.schemas import BindAliasRequest, UnbindAliasRequest, UpdateDiscoverableRequest, VerifyPhoneRequest
 
 
@@ -119,8 +119,20 @@ class AliasService:
             raise AliasNotFoundError(alias_id)
         if alias.status != AliasStatus.BOUND:
             raise AliasMustBeBoundError(alias_id)
+        changed_at = datetime.now(timezone.utc)
         alias.discoverable = req.discoverable
-        alias.updated_at = datetime.now(timezone.utc)
+        alias.discoverability_changed_at = changed_at
+        alias.discoverability_change_reason = req.reason_code
+        alias.updated_at = changed_at
+        db.add(
+            DiscoverabilityAuditLog(
+                alias_id=alias.alias_id,
+                user_id=alias.user_id,
+                reason_code=req.reason_code,
+                discoverable=req.discoverable,
+                created_at=changed_at,
+            )
+        )
         db.commit()
         db.refresh(alias)
         return alias
@@ -389,6 +401,47 @@ class AliasService:
             stats["total"] += 1
             if stats["latest_at"] is None or alias.unbound_at > stats["latest_at"]:
                 stats["latest_at"] = alias.unbound_at
+
+        summaries = list(by_reason.values())
+        summaries.sort(
+            key=lambda summary: (
+                summary["total"],
+                summary["latest_at"] or datetime.min.replace(tzinfo=timezone.utc),
+                summary["reason_code"],
+            ),
+            reverse=True,
+        )
+        return summaries[:limit]
+
+    def list_discoverability_reason_summaries(
+        self,
+        db: Session,
+        window_minutes: int = 60,
+        limit: int = 50,
+    ) -> List[dict]:
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+        logs = (
+            db.query(DiscoverabilityAuditLog)
+            .filter(
+                DiscoverabilityAuditLog.created_at >= window_start,
+            )
+            .order_by(DiscoverabilityAuditLog.created_at.desc())
+            .all()
+        )
+        by_reason = {}
+        for log in logs:
+            reason_key = log.reason_code
+            stats = by_reason.setdefault(
+                reason_key,
+                {
+                    "reason_code": reason_key,
+                    "total": 0,
+                    "latest_at": None,
+                },
+            )
+            stats["total"] += 1
+            if stats["latest_at"] is None or log.created_at > stats["latest_at"]:
+                stats["latest_at"] = log.created_at
 
         summaries = list(by_reason.values())
         summaries.sort(

@@ -333,6 +333,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/audit/unbind-reasons` summary endpoint so compliance can monitor why aliases are being released over a rolling window without scanning full alias histories.~~ ✓ Done — added unbind-reason aggregation (`reason_code`, `total`, `latest_at`) with `window_minutes` and `limit` filters; tests cover invalid reason rejection, summary counts, and old-entry exclusion.
 
 Immediate next implementation sequence:
+1. ~~Introduce a controlled discoverability-change reason taxonomy so privacy visibility changes use consistent reason codes instead of free-form notes, improving downstream compliance reporting (Epic C2).~~ ✓ Done — `PATCH /v1/aliases/{alias_id}/discoverable` now requires a validated `reason_code` (`privacy-request`, `support-guided`, `fraud-review`, `compliance-review`) and persists discoverability change metadata on the alias record.
+2. ~~Add `GET /v1/aliases/audit/discoverability-reasons` summary endpoint so compliance can monitor why alias visibility is changing over a rolling window without scanning individual alias records.~~ ✓ Done — added discoverability-change aggregation (`reason_code`, `total`, `latest_at`) with `window_minutes` and `limit` filters; tests cover invalid reason rejection, summary counts, and old-entry exclusion.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives

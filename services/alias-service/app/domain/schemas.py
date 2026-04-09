@@ -13,6 +13,12 @@ _UNBIND_REASON_CODES = {
     "reassign",
     "move",
 }
+_DISCOVERABILITY_REASON_CODES = {
+    "privacy-request",
+    "support-guided",
+    "fraud-review",
+    "compliance-review",
+}
 
 
 class VerifyPhoneRequest(BaseModel):
@@ -57,6 +63,8 @@ class AliasResponse(BaseModel):
     updated_at: datetime
     unbound_at: Optional[datetime] = None
     unbound_reason: Optional[str] = None
+    discoverability_changed_at: Optional[datetime] = None
+    discoverability_change_reason: Optional[str] = None
     recycled_from_user_id: Optional[str] = None
     recycled_at: Optional[datetime] = None
 
@@ -155,6 +163,18 @@ class UnbindReasonSummaryListResponse(BaseModel):
     reasons: List[UnbindReasonSummaryEntry]
 
 
+class DiscoverabilityReasonSummaryEntry(BaseModel):
+    reason_code: str
+    total: int
+    latest_at: Optional[datetime] = None
+
+
+class DiscoverabilityReasonSummaryListResponse(BaseModel):
+    total_reasons: int
+    window_minutes: int
+    reasons: List[DiscoverabilityReasonSummaryEntry]
+
+
 class UnbindAliasRequest(BaseModel):
     reason_code: str
 
@@ -169,6 +189,15 @@ class UnbindAliasRequest(BaseModel):
 
 class UpdateDiscoverableRequest(BaseModel):
     discoverable: bool
+    reason_code: str
+
+    @field_validator("reason_code")
+    @classmethod
+    def validate_reason_code(cls, v: str) -> str:
+        if v not in _DISCOVERABILITY_REASON_CODES:
+            allowed = ", ".join(sorted(_DISCOVERABILITY_REASON_CODES))
+            raise ValueError(f"reason_code must be one of: {allowed}")
+        return v
 
 
 class ResolveAliasResponse(BaseModel):

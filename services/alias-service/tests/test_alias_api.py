@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.domain.models import Alias, ResolveAuditLog
+from app.domain.models import Alias, DiscoverabilityAuditLog, ResolveAuditLog
 from app.infrastructure.db import Base, engine
 from app.infrastructure.db import SessionLocal
 from app.main import app
@@ -124,18 +124,36 @@ def test_update_discoverable_toggles_bound_alias() -> None:
 
     off_resp = client.patch(
         f"/v1/aliases/{alias_id}/discoverable",
-        json={"discoverable": False},
+        json={"discoverable": False, "reason_code": "privacy-request"},
     )
     assert off_resp.status_code == 200
     assert off_resp.json()["discoverable"] is False
     assert off_resp.json()["status"] == "BOUND"
+    assert off_resp.json()["discoverability_changed_at"] is not None
+    assert off_resp.json()["discoverability_change_reason"] == "privacy-request"
 
     on_resp = client.patch(
         f"/v1/aliases/{alias_id}/discoverable",
-        json={"discoverable": True},
+        json={"discoverable": True, "reason_code": "support-guided"},
     )
     assert on_resp.status_code == 200
     assert on_resp.json()["discoverable"] is True
+    assert on_resp.json()["discoverability_change_reason"] == "support-guided"
+
+
+def test_update_discoverable_rejects_invalid_reason_code() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-disc-invalid", "discoverable": True},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+
+    resp = client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": False, "reason_code": "debug"},
+    )
+    assert resp.status_code == 422
 
 
 def test_resolve_ignores_bound_alias_when_discoverable_is_false() -> None:
@@ -202,7 +220,7 @@ def test_get_alias_by_id_still_returns_undiscoverable_alias() -> None:
 def test_update_discoverable_returns_404_for_unknown_alias() -> None:
     resp = client.patch(
         "/v1/aliases/nonexistent-id/discoverable",
-        json={"discoverable": False},
+        json={"discoverable": False, "reason_code": "privacy-request"},
     )
     assert resp.status_code == 404
 
@@ -218,7 +236,7 @@ def test_update_discoverable_returns_409_for_unbound_alias() -> None:
 
     resp = client.patch(
         f"/v1/aliases/{alias_id}/discoverable",
-        json={"discoverable": False},
+        json={"discoverable": False, "reason_code": "privacy-request"},
     )
     assert resp.status_code == 409
 
@@ -845,3 +863,57 @@ def test_unbind_reason_summary_excludes_old_unbinds() -> None:
     assert summary.status_code == 200
     body = summary.json()
     assert all(entry["reason_code"] != "move" for entry in body["reasons"])
+
+
+def test_discoverability_reason_summary_counts_reason_codes() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-disc-a", "discoverable": True},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": False, "reason_code": "privacy-request"},
+    )
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": True, "reason_code": "support-guided"},
+    )
+
+    summary = client.get(
+        "/v1/aliases/audit/discoverability-reasons",
+        params={"window_minutes": 60, "limit": 10},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["total_reasons"] == 2
+    reason_codes = [entry["reason_code"] for entry in body["reasons"]]
+    assert "privacy-request" in reason_codes
+    assert "support-guided" in reason_codes
+
+
+def test_discoverability_reason_summary_excludes_old_changes() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-disc-old", "discoverable": True},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+    client.patch(
+        f"/v1/aliases/{alias_id}/discoverable",
+        json={"discoverable": False, "reason_code": "fraud-review"},
+    )
+
+    with SessionLocal() as db:
+        log = db.query(DiscoverabilityAuditLog).filter(DiscoverabilityAuditLog.alias_id == alias_id).first()
+        log.created_at = log.created_at.replace(year=log.created_at.year - 1)
+        db.commit()
+
+    summary = client.get(
+        "/v1/aliases/audit/discoverability-reasons",
+        params={"window_minutes": 60},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert all(entry["reason_code"] != "fraud-review" for entry in body["reasons"])

@@ -51,6 +51,23 @@ class ResolveAuditLog(Base):
     )
 
 
+class DiscoverabilityAuditLog(Base):
+    __tablename__ = "discoverability_audit_logs"
+
+    log_id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    alias_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reason_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    discoverable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
 class Alias(Base):
     __tablename__ = "aliases"
 
@@ -67,6 +84,10 @@ class Alias(Base):
         DateTime(timezone=True), nullable=True
     )
     unbound_reason: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    discoverability_changed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    discoverability_change_reason: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     recycled_from_user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     recycled_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
