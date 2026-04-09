@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.domain.models import ResolveAuditLog
+from app.domain.models import Alias, ResolveAuditLog
 from app.infrastructure.db import Base, engine
 from app.infrastructure.db import SessionLocal
 from app.main import app
@@ -96,6 +96,21 @@ def test_unbind_records_unbound_at_and_reason() -> None:
     assert body["status"] == "UNBOUND"
     assert body["unbound_at"] is not None
     assert body["unbound_reason"] == "compliance-hold"
+
+
+def test_unbind_rejects_invalid_reason_code() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-invalid-unbind"},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+
+    unbind_resp = client.post(
+        f"/v1/aliases/{alias_id}/unbind",
+        json={"reason_code": "debug"},
+    )
+    assert unbind_resp.status_code == 422
 
 
 def test_update_discoverable_toggles_bound_alias() -> None:
@@ -199,7 +214,7 @@ def test_update_discoverable_returns_409_for_unbound_alias() -> None:
         json={"verification_id": verification_id, "user_id": "u-409"},
     )
     alias_id = bind_resp.json()["alias_id"]
-    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "test"})
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "user-request"})
 
     resp = client.patch(
         f"/v1/aliases/{alias_id}/discoverable",
@@ -268,7 +283,7 @@ def test_alias_history_returns_all_bindings_in_order() -> None:
         json={"verification_id": verification_id, "user_id": "u-hist-a"},
     )
     alias_id = first_bind.json()["alias_id"]
-    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "test"})
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "user-request"})
 
     client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
     verify2 = client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
@@ -777,3 +792,56 @@ def test_resolve_purpose_summary_rejects_invalid_lookup_scope() -> None:
         params={"lookup_scope": "BROKEN"},
     )
     assert resp.status_code == 422
+
+
+def test_unbind_reason_summary_counts_reason_codes() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-unbind-a"},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "user-request"})
+
+    client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    verify2 = client.post("/v1/aliases/verify-phone", json={"phone_e164": PHONE, "otp_code": OTP})
+    bind_resp2 = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verify2.json()["verification_id"], "user_id": "u-unbind-b"},
+    )
+    alias_id2 = bind_resp2.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_id2}/unbind", json={"reason_code": "number-change"})
+
+    summary = client.get(
+        "/v1/aliases/audit/unbind-reasons",
+        params={"window_minutes": 60, "limit": 10},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["total_reasons"] == 2
+    reason_codes = [entry["reason_code"] for entry in body["reasons"]]
+    assert "user-request" in reason_codes
+    assert "number-change" in reason_codes
+
+
+def test_unbind_reason_summary_excludes_old_unbinds() -> None:
+    verification_id = _do_two_step_verify()
+    bind_resp = client.post(
+        "/v1/aliases/bind",
+        json={"verification_id": verification_id, "user_id": "u-old-unbind"},
+    )
+    alias_id = bind_resp.json()["alias_id"]
+    client.post(f"/v1/aliases/{alias_id}/unbind", json={"reason_code": "move"})
+
+    with SessionLocal() as db:
+        alias = db.query(Alias).filter(Alias.alias_id == alias_id).first()
+        alias.unbound_at = alias.unbound_at.replace(year=alias.unbound_at.year - 1)
+        db.commit()
+
+    summary = client.get(
+        "/v1/aliases/audit/unbind-reasons",
+        params={"window_minutes": 60},
+    )
+    assert summary.status_code == 200
+    body = summary.json()
+    assert all(entry["reason_code"] != "move" for entry in body["reasons"])

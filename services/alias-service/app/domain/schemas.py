@@ -5,6 +5,14 @@ from typing import List, Optional
 from pydantic import BaseModel, field_validator
 
 _E164_RE = re.compile(r"^\+[1-9]\d{7,14}$")
+_UNBIND_REASON_CODES = {
+    "user-request",
+    "compliance-hold",
+    "number-change",
+    "rotate",
+    "reassign",
+    "move",
+}
 
 
 class VerifyPhoneRequest(BaseModel):
@@ -135,8 +143,28 @@ class ResolvePurposeAuditSummaryListResponse(BaseModel):
     purposes: List[ResolvePurposeAuditSummaryEntry]
 
 
+class UnbindReasonSummaryEntry(BaseModel):
+    reason_code: str
+    total: int
+    latest_at: Optional[datetime] = None
+
+
+class UnbindReasonSummaryListResponse(BaseModel):
+    total_reasons: int
+    window_minutes: int
+    reasons: List[UnbindReasonSummaryEntry]
+
+
 class UnbindAliasRequest(BaseModel):
     reason_code: str
+
+    @field_validator("reason_code")
+    @classmethod
+    def validate_reason_code(cls, v: str) -> str:
+        if v not in _UNBIND_REASON_CODES:
+            allowed = ", ".join(sorted(_UNBIND_REASON_CODES))
+            raise ValueError(f"reason_code must be one of: {allowed}")
+        return v
 
 
 class UpdateDiscoverableRequest(BaseModel):

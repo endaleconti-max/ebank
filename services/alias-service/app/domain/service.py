@@ -357,6 +357,50 @@ class AliasService:
         )
         return summaries[:limit]
 
+    def list_unbind_reason_summaries(
+        self,
+        db: Session,
+        window_minutes: int = 60,
+        limit: int = 50,
+    ) -> List[dict]:
+        window_start = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+        aliases = (
+            db.query(Alias)
+            .filter(
+                Alias.status == AliasStatus.UNBOUND,
+                Alias.unbound_reason.is_not(None),
+                Alias.unbound_at.is_not(None),
+                Alias.unbound_at >= window_start,
+            )
+            .order_by(Alias.unbound_at.desc())
+            .all()
+        )
+        by_reason = {}
+        for alias in aliases:
+            reason_key = alias.unbound_reason or "(none)"
+            stats = by_reason.setdefault(
+                reason_key,
+                {
+                    "reason_code": reason_key,
+                    "total": 0,
+                    "latest_at": None,
+                },
+            )
+            stats["total"] += 1
+            if stats["latest_at"] is None or alias.unbound_at > stats["latest_at"]:
+                stats["latest_at"] = alias.unbound_at
+
+        summaries = list(by_reason.values())
+        summaries.sort(
+            key=lambda summary: (
+                summary["total"],
+                summary["latest_at"] or datetime.min.replace(tzinfo=timezone.utc),
+                summary["reason_code"],
+            ),
+            reverse=True,
+        )
+        return summaries[:limit]
+
     def get_alias_history(
         self,
         db: Session,

@@ -329,6 +329,10 @@ Immediate next implementation sequence:
 2. ~~Add `GET /v1/aliases/audit/resolve/purposes` purpose-summary endpoint so teams can monitor which internal purposes drive hidden-alias lookups over a rolling window.~~ ✓ Done — added purpose-level aggregate reporting (`total`, `found`, `not_found`, `blocked`, `latest_at`) with `lookup_scope`, `window_minutes`, and `limit` filters; tests cover valid summaries and invalid scope validation.
 
 Immediate next implementation sequence:
+1. ~~Introduce a controlled unbind-reason taxonomy so alias lifecycle release events use consistent reason codes instead of arbitrary free-form values, improving downstream compliance reporting (Epic C3).~~ ✓ Done — `UnbindAliasRequest.reason_code` now validates against an allowed set (`user-request`, `compliance-hold`, `number-change`, `rotate`, `reassign`, `move`) and invalid values return 422.
+2. ~~Add `GET /v1/aliases/audit/unbind-reasons` summary endpoint so compliance can monitor why aliases are being released over a rolling window without scanning full alias histories.~~ ✓ Done — added unbind-reason aggregation (`reason_code`, `total`, `latest_at`) with `window_minutes` and `limit` filters; tests cover invalid reason rejection, summary counts, and old-entry exclusion.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives

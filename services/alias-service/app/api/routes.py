@@ -21,6 +21,7 @@ from app.domain.schemas import (
     ResolveCallerAuditSummaryListResponse,
     ResolveAuditResponse,
     ResolveAuditSummaryResponse,
+    UnbindReasonSummaryListResponse,
     UndiscoverableAliasListResponse,
     UnbindAliasRequest,
     UpdateDiscoverableRequest,
@@ -201,6 +202,24 @@ def list_resolve_audit_purposes(
         lookup_scope=lookup_scope,
         window_minutes=window_minutes,
         purposes=purposes,
+    )
+
+
+@router.get("/v1/aliases/audit/unbind-reasons", response_model=UnbindReasonSummaryListResponse)
+def list_unbind_reason_summaries(
+    window_minutes: int = Query(default=60, ge=1, le=1440),
+    limit: int = Query(default=50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    reasons = _svc.list_unbind_reason_summaries(
+        db,
+        window_minutes=window_minutes,
+        limit=limit,
+    )
+    return UnbindReasonSummaryListResponse(
+        total_reasons=len(reasons),
+        window_minutes=window_minutes,
+        reasons=reasons,
     )
 
 
