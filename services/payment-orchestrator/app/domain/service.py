@@ -118,6 +118,7 @@ class PaymentOrchestratorService:
                 recipient_phone_e164=transfer.recipient_phone_e164,
                 amount_minor=transfer.amount_minor,
                 note=transfer.note,
+                db=self.db,
             )
             if not precheck_ok:
                 transfer.status = TransferStatus.FAILED

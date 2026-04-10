@@ -1,8 +1,13 @@
+from datetime import datetime, timezone
 from typing import Optional, Tuple
+
+from sqlalchemy import and_, func, select
+from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.domain.alias_client import resolve_alias
 from app.domain.identity_client import get_user_status
+from app.domain.models import Transfer, TransferStatus
 from app.domain.risk_client import call_risk_service
 
 
@@ -38,12 +43,63 @@ def check_transfer_limits(kyc_status: str, amount_minor: int) -> Tuple[bool, Opt
     return True, None
 
 
+def check_daily_transfer_limits(
+    db: Optional[Session],
+    sender_user_id: str,
+    kyc_status: str,
+    amount_minor: int,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Check if the transfer would exceed KYC tier daily limits.
+    
+    Queries today's successful transfers and accumulates the total,
+    then checks if adding this transfer would exceed the daily limit.
+    """
+    if not settings.transfer_limits_enabled or db is None:
+        return True, None
+
+    limits = settings.transfer_limits_by_kyc_status.get(kyc_status, {})
+    daily_limit = limits.get("daily_minor", 0)
+
+    # If daily limit is 0 (e.g., REJECTED tier), block immediately
+    if daily_limit == 0 and kyc_status == "REJECTED":
+        return False, f"transfer_limit_exceeded: REJECTED tier has daily limit of 0"
+
+    # Query all successful transfers for this sender today (UTC calendar day)
+    now_utc = datetime.now(timezone.utc)
+    day_start_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end_utc = now_utc.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    total_today = db.execute(
+        select(func.sum(Transfer.amount_minor)).where(
+            and_(
+                Transfer.sender_user_id == sender_user_id,
+                Transfer.created_at >= day_start_utc,
+                Transfer.created_at <= day_end_utc,
+                Transfer.status.in_([TransferStatus.SETTLED, TransferStatus.VALIDATED, TransferStatus.RESERVED]),
+            )
+        )
+    ).scalar()
+
+    total_today = total_today or 0
+    projected_total = total_today + amount_minor
+
+    if projected_total > daily_limit:
+        return (
+            False,
+            f"daily_transfer_limit_exceeded: {projected_total} exceeds {daily_limit} for {kyc_status} (today: {total_today})",
+        )
+
+    return True, None
+
+
 def run_prechecks(
     sender_user_id: str,
     recipient_phone_e164: str,
     amount_minor: int,
     note: Optional[str],
     caller_id: Optional[str] = None,
+    db: Optional[Session] = None,
 ) -> Tuple[bool, Optional[str]]:
     # ── 1. Sender KYC / account status check ─────────────────────────────────
     kyc_status = "NOT_STARTED"  # default for fallback scenarios
@@ -64,6 +120,11 @@ def run_prechecks(
     limits_ok, limits_reason = check_transfer_limits(kyc_status, amount_minor)
     if not limits_ok:
         return False, limits_reason
+
+    # ── 1c. Daily transfer limit check ──────────────────────────────────────
+    daily_ok, daily_reason = check_daily_transfer_limits(db, sender_user_id, kyc_status, amount_minor)
+    if not daily_ok:
+        return False, daily_reason
 
     # ── 2. Recipient alias resolution check ──────────────────────────────────
     alias_result = resolve_alias(recipient_phone_e164, caller_id=caller_id)
