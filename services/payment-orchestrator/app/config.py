@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     connector_destination: str = "acct-orchestrator-default"
     ledger_base_url: str = "http://localhost:8003"
     ledger_posting_enabled: bool = False
+    risk_service_base_url: str = "http://localhost:8006"
+    risk_service_enabled: bool = False
+    risk_service_timeout_seconds: float = 2.0
 
 
 settings = Settings()

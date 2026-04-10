@@ -368,6 +368,11 @@ Immediate next implementation sequence:
 Pair 10 completion summary: Authorization checks are now observable via an in-memory audit stream and query API; targeted + full gateway suites are green at 44 passing tests.
 
 Immediate next implementation sequence:
+1. ~~Build a standalone risk-service (FastAPI + SQLAlchemy/SQLite) with a configurable rule engine and evaluation audit log so risk decisions are decoupled from the orchestrator and can be managed at runtime.~~ ✓ Done — `services/risk-service` scaffolded with `RiskRule` + `RiskEvaluationLog` models, first-match-wins rule evaluator, rule CRUD endpoints (`POST/GET/DELETE /v1/risk/rules`), evaluation endpoint (`POST /v1/risk/evaluate`), and evaluation audit log query (`GET /v1/risk/log`); 21 tests passing.
+2. ~~Wire the payment-orchestrator to call the standalone risk-service via an HTTP client, with transparent fallback to local prechecks when the service is unreachable.~~ ✓ Done — added `app/domain/risk_client.py` to the orchestrator with `call_risk_service()` (urllib, configurable URL/timeout/enabled flag, safe fallback on any `URLError`); `run_prechecks()` now calls the client first and falls back to local rules only when service returns `None`; 10 new orchestrator tests cover allow/deny/review (remote) and allow/deny (local fallback after connection refused); full orchestrator suite green at 39 passing tests.
+Pair 11 completion summary: Risk evaluation is now a standalone service with a runtime-configurable rule engine; orchestrator transparently uses it when enabled and degrades gracefully to local prechecks on failure.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives
