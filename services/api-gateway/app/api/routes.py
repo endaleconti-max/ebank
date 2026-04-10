@@ -395,6 +395,120 @@ async def resolve_alias(phone_e164: str, request: Request):
     return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
 
 
+# ── Risk routes ───────────────────────────────────────────────────────────────
+
+@router.get("/risk/rules")
+async def list_risk_rules(request: Request):
+    _authorize(request, Permission.VIEW_RISK_RULES)
+    resp = await _risk_client.list_rules(headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream risk unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.post("/risk/rules")
+async def create_risk_rule(payload: dict, request: Request):
+    _authorize(request, Permission.MANAGE_RISK_RULES)
+    resp = await _risk_client.create_rule(payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream risk unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.delete("/risk/rules/{rule_id}")
+async def delete_risk_rule(rule_id: str, request: Request):
+    _authorize(request, Permission.MANAGE_RISK_RULES)
+    resp = await _risk_client.delete_rule(rule_id=rule_id, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream risk unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.get("/risk/log")
+async def list_risk_log(
+    request: Request,
+    limit: int = 100,
+    sender_user_id: Optional[str] = None,
+    decision: Optional[str] = None,
+):
+    _authorize(request, Permission.VIEW_RISK_LOG)
+    params = {k: v for k, v in {
+        "limit": limit,
+        "sender_user_id": sender_user_id,
+        "decision": decision,
+    }.items() if v is not None}
+    resp = await _risk_client.list_log(params=params, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream risk unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.post("/risk/evaluate")
+async def evaluate_risk(payload: dict, request: Request):
+    _authorize(request, Permission.EVALUATE_RISK)
+    resp = await _risk_client.evaluate(payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream risk unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+# ── Compliance routes ─────────────────────────────────────────────────────────
+
+@router.get("/compliance/watchlist")
+async def list_compliance_watchlist(request: Request):
+    _authorize(request, Permission.VIEW_COMPLIANCE_WATCHLIST)
+    resp = await _compliance_client.list_watchlist(headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream compliance unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.post("/compliance/watchlist")
+async def create_compliance_watchlist_entry(payload: dict, request: Request):
+    _authorize(request, Permission.MANAGE_COMPLIANCE_WATCHLIST)
+    resp = await _compliance_client.create_watchlist_entry(payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream compliance unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.delete("/compliance/watchlist/{entry_id}")
+async def delete_compliance_watchlist_entry(entry_id: str, request: Request):
+    _authorize(request, Permission.MANAGE_COMPLIANCE_WATCHLIST)
+    resp = await _compliance_client.delete_watchlist_entry(entry_id=entry_id, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream compliance unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.get("/compliance/log")
+async def list_compliance_log(
+    request: Request,
+    limit: int = 100,
+    subject_type: Optional[str] = None,
+    decision: Optional[str] = None,
+):
+    _authorize(request, Permission.VIEW_COMPLIANCE_LOG)
+    params = {k: v for k, v in {
+        "limit": limit,
+        "subject_type": subject_type,
+        "decision": decision,
+    }.items() if v is not None}
+    resp = await _compliance_client.list_log(params=params, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream compliance unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.post("/compliance/screen")
+async def screen_compliance_subject(payload: dict, request: Request):
+    _authorize(request, Permission.SCREEN_COMPLIANCE_SUBJECT)
+    resp = await _compliance_client.screen(payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream compliance unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
 @router.get("/healthz", status_code=204)
 async def healthz() -> Response:
     return Response(status_code=204)
