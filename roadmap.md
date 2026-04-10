@@ -373,6 +373,11 @@ Immediate next implementation sequence:
 Pair 11 completion summary: Risk evaluation is now a standalone service with a runtime-configurable rule engine; orchestrator transparently uses it when enabled and degrades gracefully to local prechecks on failure.
 
 Immediate next implementation sequence:
+1. ~~Build a standalone compliance-service (FastAPI + SQLAlchemy/SQLite) with a configurable sanctions watchlist, Levenshtein-based fuzzy name matching (exact → HIT, near → POTENTIAL_MATCH, far → CLEAR), soft-delete watchlist management, and a full screening audit log.~~ ✓ Done — `services/compliance-service` scaffolded with `WatchlistEntry` + `ScreeningLog` models, pure-Python Levenshtein matcher, screening endpoint (`POST /v1/compliance/screen`), watchlist CRUD (`GET|POST /v1/compliance/watchlist`, `DELETE /v1/compliance/watchlist/{entry_id}`), and audit log query (`GET /v1/compliance/log`); 22 tests passing.
+2. ~~Wire the identity-service KYC approval path to screen the applicant against the compliance-service; a confirmed sanctions hit overrides the operator approval to REJECTED; service unavailability applies a configurable fallback policy (allow/deny).~~ ✓ Done — added `app/domain/compliance_client.py` to identity-service (urllib, `compliance_service_enabled` gate, safe fallback on `URLError`); `decide_kyc()` calls screen on APPROVED decisions and downgrades to REJECTED on HIT; `POTENTIAL_MATCH` is advisory (does not block); deny fallback policy supported; 7 new identity-service tests cover all paths; total identity-service suite green at 9 tests.
+Pair 12 completion summary: Sanctions screening is now a standalone service with fuzzy name matching and soft-delete watchlist management; KYC approval in identity-service is gated by sanctions checks with configurable fallback behaviour.
+
+Immediate next implementation sequence:
 Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
 
 ## 2. Strategic Objectives
