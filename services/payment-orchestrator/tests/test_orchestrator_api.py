@@ -73,8 +73,8 @@ def test_created_to_validated_runs_prechecks_and_can_auto_fail() -> None:
             "sender_user_id": "u-risk",
             "recipient_phone_e164": "+15550007777",
             "currency": "USD",
-            "amount_minor": 200001,
-            "note": "normal",
+            "amount_minor": 9_000,  # passes transfer limit (10k) but fails on fraud keyword
+            "note": "fraud alert",
         },
         headers={"Idempotency-Key": "transfer-risk-1"},
     )
