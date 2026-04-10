@@ -154,26 +154,26 @@ def test_daily_limit_only_counts_successful_statuses():
     """Daily limit should only count SETTLED, VALIDATED, RESERVED; not FAILED or REVERSED."""
     db = SessionLocal()
 
-    # Insert 450k SETTLED
-    insert_transfer(db, "u-approved-4", 450_000, TransferStatus.SETTLED, hours_ago=2)
+    # Insert 1.8M SETTLED
+    insert_transfer(db, "u-approved-4", 1_800_000, TransferStatus.SETTLED, hours_ago=2)
 
-    # Insert 100k FAILED (should not count)
-    insert_transfer(db, "u-approved-4", 100_000, TransferStatus.FAILED, hours_ago=1)
+    # Insert 300k FAILED (should not count)
+    insert_transfer(db, "u-approved-4", 300_000, TransferStatus.FAILED, hours_ago=1)
 
-    # Insert 50k REVERSED (should not count)
-    insert_transfer(db, "u-approved-4", 50_000, TransferStatus.REVERSED, hours_ago=0)
+    # Insert 100k REVERSED (should not count)
+    insert_transfer(db, "u-approved-4", 100_000, TransferStatus.REVERSED, hours_ago=0)
 
-    # Try to add 100k (should check against only SETTLED 450k, so 450k + 100k = 550k, over limit)
+    # Try to add 300k (should check against only SETTLED 1.8M, so 1.8M + 300k = 2.1M, over 2M limit)
     ok, reason = check_daily_transfer_limits(
         db=db,
         sender_user_id="u-approved-4",
         kyc_status="APPROVED",
-        amount_minor=100_000,
+        amount_minor=300_000,
     )
 
     db.close()
     assert ok is False
-    assert "550000" in reason  # should be 450 + 100, not 450 + 100 + 100 + 50
+    assert "2100000" in reason  # should be 1.8M + 300k, not 1.8M + 300k + 300k + 100k
 
 
 def test_daily_limit_sunset_at_midnight_utc():
