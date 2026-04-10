@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import DuplicateUserError, InvalidKycTransitionError, UserNotFoundError
 from app.domain.models import KycStatus, User
+from app.domain.compliance_client import screen_subject
+from app.config import settings
 
 
 class IdentityService:
@@ -43,6 +45,25 @@ class IdentityService:
         user = self.get_user(user_id)
         if user.kyc_status != KycStatus.SUBMITTED:
             raise InvalidKycTransitionError("kyc decision transition invalid")
+
+        # Run sanctions screening when approving — an operator decision cannot
+        # override a confirmed watchlist hit.
+        if decision == KycStatus.APPROVED:
+            screen_result = screen_subject(
+                subject_id=user_id,
+                subject_type="user",
+                name=user.full_name,
+                caller_id="identity-service",
+            )
+            if screen_result is not None:
+                screen_decision, _, _ = screen_result
+                if screen_decision == "hit":
+                    # Hard block: sanctions hit overrides operator approval
+                    decision = KycStatus.REJECTED
+            else:
+                # Service unavailable: apply configured fallback policy
+                if settings.compliance_service_fallback_policy == "deny":
+                    decision = KycStatus.REJECTED
 
         user.kyc_status = decision
         self.db.commit()
