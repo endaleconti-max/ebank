@@ -7,8 +7,10 @@ from app.domain.risk_client import call_risk_service
 
 
 def run_risk_precheck(amount_minor: int, note: Optional[str]) -> Tuple[bool, Optional[str]]:
-    if amount_minor > settings.risk_amount_limit_minor:
-        return False, "risk_precheck_failed: amount exceeds configured limit"
+    # Skip amount limit check if transfer limits are globally disabled
+    if settings.transfer_limits_enabled:
+        if amount_minor > settings.risk_amount_limit_minor:
+            return False, "risk_precheck_failed: amount exceeds configured limit"
     if note and "fraud" in note.lower():
         return False, "risk_precheck_failed: note flagged by rule"
     return True, None
@@ -22,6 +24,20 @@ def run_compliance_precheck(sender_user_id: str, recipient_phone_e164: str) -> T
     return True, None
 
 
+def check_transfer_limits(kyc_status: str, amount_minor: int) -> Tuple[bool, Optional[str]]:
+    """Check if the transfer amount exceeds KYC tier limits."""
+    if not settings.transfer_limits_enabled:
+        return True, None
+
+    limits = settings.transfer_limits_by_kyc_status.get(kyc_status, {})
+    single_limit = limits.get("single_minor", 0)
+
+    if amount_minor > single_limit:
+        return False, f"transfer_limit_exceeded: {amount_minor} exceeds {single_limit} for {kyc_status}"
+
+    return True, None
+
+
 def run_prechecks(
     sender_user_id: str,
     recipient_phone_e164: str,
@@ -30,6 +46,7 @@ def run_prechecks(
     caller_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     # ── 1. Sender KYC / account status check ─────────────────────────────────
+    kyc_status = "NOT_STARTED"  # default for fallback scenarios
     id_result = get_user_status(sender_user_id, caller_id=caller_id)
     if id_result is not None:
         account_status, kyc_status = id_result
@@ -41,6 +58,12 @@ def run_prechecks(
         # Service unavailable
         if settings.identity_service_fallback_policy == "deny":
             return False, "identity_service_unavailable: fallback_deny"
+        # else: allow fallback, continue with default kyc_status="NOT_STARTED"
+
+    # ── 1b. Transfer limit check based on KYC tier ──────────────────────────
+    limits_ok, limits_reason = check_transfer_limits(kyc_status, amount_minor)
+    if not limits_ok:
+        return False, limits_reason
 
     # ── 2. Recipient alias resolution check ──────────────────────────────────
     alias_result = resolve_alias(recipient_phone_e164, caller_id=caller_id)

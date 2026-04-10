@@ -20,3 +20,7 @@ class InvalidTransferRequestError(DomainError):
 
 class ConnectorCallbackTargetNotFoundError(DomainError):
     pass
+
+
+class TransferLimitExceededError(DomainError):
+    pass

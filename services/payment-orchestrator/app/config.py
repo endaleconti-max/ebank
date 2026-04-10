@@ -1,6 +1,14 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class TransferLimitTier:
+    """Transfer limits per KYC status tier."""
+    def __init__(self, kyc_status: str, single_transfer_limit_minor: int, daily_limit_minor: int):
+        self.kyc_status = kyc_status
+        self.single_transfer_limit_minor = single_transfer_limit_minor
+        self.daily_limit_minor = daily_limit_minor
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ORCHESTRATOR_", case_sensitive=False)
 
@@ -27,6 +35,14 @@ class Settings(BaseSettings):
     alias_service_timeout_seconds: float = 2.0
     # Policy when alias-service unavailable: "allow" or "deny"
     alias_service_fallback_policy: str = "allow"
+    # Transfer limits by KYC status (minor currency units)
+    transfer_limits_by_kyc_status: dict = {
+        "NOT_STARTED": {"single_minor": 10_000, "daily_minor": 20_000},
+        "SUBMITTED": {"single_minor": 10_000, "daily_minor": 20_000},
+        "APPROVED": {"single_minor": 500_000, "daily_minor": 2_000_000},
+        "REJECTED": {"single_minor": 0, "daily_minor": 0},
+    }
+    transfer_limits_enabled: bool = True
 
 
 settings = Settings()
