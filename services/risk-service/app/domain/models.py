@@ -22,11 +22,13 @@ def get_db() -> Session:
 
 
 class Base(DeclarativeBase):
-    pass
+    __allow_unmapped__ = True
 
 
 class RiskRule(Base):
     """A configurable risk evaluation rule."""
+
+    __allow_unmapped__ = True
 
     __tablename__ = "risk_rules"
 
@@ -51,6 +53,8 @@ class RiskRule(Base):
 
 class RiskEvaluationLog(Base):
     """Immutable log of every risk evaluation call."""
+
+    __allow_unmapped__ = True
 
     __tablename__ = "risk_evaluation_log"
 
