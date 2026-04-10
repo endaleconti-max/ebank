@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     orchestrator_base_url: str = "http://localhost:8004"
     connector_base_url: str = "http://localhost:8005"
     reconciliation_base_url: str = "http://localhost:8006"
+    ledger_base_url: str = "http://localhost:8008"
     identity_base_url: str = "http://localhost:8001"
     alias_base_url: str = "http://localhost:8002"
     risk_base_url: str = "http://localhost:8003"

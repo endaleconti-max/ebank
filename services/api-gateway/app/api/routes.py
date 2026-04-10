@@ -6,6 +6,7 @@ from app.clients.alias_client import AliasClient
 from app.clients.compliance_client import ComplianceClient
 from app.clients.connector_client import ConnectorClient
 from app.clients.identity_client import IdentityClient
+from app.clients.ledger_client import LedgerClient
 from app.clients.orchestrator_client import OrchestratorClient
 from app.clients.reconciliation_client import ReconciliationClient
 from app.clients.risk_client import RiskClient
@@ -21,6 +22,7 @@ _identity_client = IdentityClient()
 _alias_client = AliasClient()
 _risk_client = RiskClient()
 _compliance_client = ComplianceClient()
+_ledger_client = LedgerClient()
 _authz_audit_store = get_authorization_audit_store()
 
 TransferEventStatusFilter = Literal[
@@ -399,6 +401,35 @@ async def get_account_audit_log(user_id: str, request: Request):
     resp = await _identity_client.get_account_audit_log(user_id=user_id, headers=_forward_headers(request))
     if resp.status_code >= 500:
         raise HTTPException(status_code=502, detail="upstream identity unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+# ── Ledger routes ─────────────────────────────────────────────────────────────
+
+@router.post("/ledger/accounts")
+async def create_ledger_account(payload: dict, request: Request):
+    _authorize(request, Permission.CREATE_LEDGER_ACCOUNT)
+    resp = await _ledger_client.create_account(payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream ledger unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.get("/ledger/accounts/{account_id}/balance")
+async def get_ledger_balance(account_id: str, request: Request):
+    _authorize(request, Permission.VIEW_LEDGER_BALANCE)
+    resp = await _ledger_client.get_balance(account_id=account_id, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream ledger unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.get("/ledger/entries/{entry_id}")
+async def get_ledger_entry(entry_id: str, request: Request):
+    _authorize(request, Permission.VIEW_LEDGER_ENTRY)
+    resp = await _ledger_client.get_entry(entry_id=entry_id, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream ledger unavailable")
     return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
 
 

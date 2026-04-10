@@ -55,6 +55,10 @@ class Permission(str, Enum):
     VIEW_COMPLIANCE_LOG = "compliance:view_log"
     SCREEN_COMPLIANCE_SUBJECT = "compliance:screen"
 
+    CREATE_LEDGER_ACCOUNT = "ledger:create_account"
+    VIEW_LEDGER_BALANCE = "ledger:view_balance"
+    VIEW_LEDGER_ENTRY = "ledger:view_entry"
+
 
 @dataclass
 class RequestIdentity:

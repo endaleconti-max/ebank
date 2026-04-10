@@ -393,8 +393,10 @@ Immediate next implementation sequence:
 Pair 15 completion summary: Operations teams can now suspend, reinstate, or permanently close accounts via the API Gateway with full audit trail; every transition is state-machine-guarded so invalid moves return 409; the actor identity (X-Caller-Id header) is captured in every audit log entry enabling accountability for every account action.
 
 Immediate next implementation sequence:
+1. ~~Expose ledger-service account and balance operations through the API Gateway: add `LedgerClient` in gateway (`app/clients/ledger_client.py`), add 3 new permissions (`CREATE_LEDGER_ACCOUNT`, `VIEW_LEDGER_BALANCE`, `VIEW_LEDGER_ENTRY`), add 3 routes (`POST /v1/ledger/accounts`, `GET /v1/ledger/accounts/{account_id}/balance`, `GET /v1/ledger/entries/{entry_id}`) with correct permission gates and 502 on upstream 5xx.~~ ✓ Done — `app/clients/ledger_client.py` created; 3 ledger permissions added; 3 routes added; 9 new gateway tests cover forwarding, payload capture, 404/409/502 paths; gateway test suite now 78 tests.
+Pair 16 completion summary: Ledger account creation and balance/entry lookups are now fully exposed through the API Gateway, enabling operations teams to initialize accounts for users and transit flows, and audit/debug specific transfers via entry inspection; orchestrator already calls ledger internally when posting transfers, so this pair unblocks operational visibility into the ledger double-entry layer.
 
-## 3. Product Scope
+Immediate next implementation sequence:
 ### In Scope (MVP)
 1. User onboarding and identity verification (KYC).
 2. Mobile number verification and alias mapping.
