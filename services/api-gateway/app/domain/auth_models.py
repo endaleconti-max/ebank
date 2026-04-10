@@ -43,6 +43,16 @@ class Permission(str, Enum):
     MANAGE_ALIASES = "alias:manage"
     VIEW_ALIAS_AUDIT = "alias:view_audit"
 
+    VIEW_RISK_RULES = "risk:view_rules"
+    MANAGE_RISK_RULES = "risk:manage_rules"
+    VIEW_RISK_LOG = "risk:view_log"
+    EVALUATE_RISK = "risk:evaluate"
+
+    VIEW_COMPLIANCE_WATCHLIST = "compliance:view_watchlist"
+    MANAGE_COMPLIANCE_WATCHLIST = "compliance:manage_watchlist"
+    VIEW_COMPLIANCE_LOG = "compliance:view_log"
+    SCREEN_COMPLIANCE_SUBJECT = "compliance:screen"
+
 
 @dataclass
 class RequestIdentity:

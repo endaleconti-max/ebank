@@ -3,10 +3,12 @@ from typing import Literal, Optional
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.clients.alias_client import AliasClient
+from app.clients.compliance_client import ComplianceClient
 from app.clients.connector_client import ConnectorClient
 from app.clients.identity_client import IdentityClient
 from app.clients.orchestrator_client import OrchestratorClient
 from app.clients.reconciliation_client import ReconciliationClient
+from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.domain.authorization_audit import get_authorization_audit_store
 from app.domain.auth_models import Permission
@@ -17,6 +19,8 @@ _connector_client = ConnectorClient()
 _reconciliation_client = ReconciliationClient()
 _identity_client = IdentityClient()
 _alias_client = AliasClient()
+_risk_client = RiskClient()
+_compliance_client = ComplianceClient()
 _authz_audit_store = get_authorization_audit_store()
 
 TransferEventStatusFilter = Literal[

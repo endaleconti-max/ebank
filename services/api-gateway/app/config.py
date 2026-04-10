@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     reconciliation_base_url: str = "http://localhost:8006"
     identity_base_url: str = "http://localhost:8001"
     alias_base_url: str = "http://localhost:8002"
+    risk_base_url: str = "http://localhost:8003"
+    compliance_base_url: str = "http://localhost:8007"
     enforce_idempotency: bool = True
     enforce_authentication: bool = True
     enforce_authorization: bool = True
