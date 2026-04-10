@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     risk_service_base_url: str = "http://localhost:8006"
     risk_service_enabled: bool = False
     risk_service_timeout_seconds: float = 2.0
+    identity_service_base_url: str = "http://localhost:8001"
+    identity_service_enabled: bool = False
+    identity_service_timeout_seconds: float = 2.0
+    # Policy when identity-service unavailable: "allow" or "deny"
+    identity_service_fallback_policy: str = "allow"
+    alias_service_base_url: str = "http://localhost:8002"
+    alias_service_enabled: bool = False
+    alias_service_timeout_seconds: float = 2.0
+    # Policy when alias-service unavailable: "allow" or "deny"
+    alias_service_fallback_policy: str = "allow"
 
 
 settings = Settings()

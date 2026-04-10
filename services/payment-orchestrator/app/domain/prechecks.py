@@ -1,6 +1,8 @@
 from typing import Optional, Tuple
 
 from app.config import settings
+from app.domain.alias_client import resolve_alias
+from app.domain.identity_client import get_user_status
 from app.domain.risk_client import call_risk_service
 
 
