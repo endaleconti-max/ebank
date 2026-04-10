@@ -62,8 +62,8 @@ def check_daily_transfer_limits(
     daily_limit = limits.get("daily_minor", 0)
 
     # If daily limit is 0 (e.g., REJECTED tier), block immediately
-    if daily_limit == 0 and kyc_status == "REJECTED":
-        return False, f"transfer_limit_exceeded: REJECTED tier has daily limit of 0"
+    if daily_limit == 0:
+        return False, f"daily_transfer_limit_exceeded: {kyc_status} tier has daily limit of 0"
 
     # Query all successful transfers for this sender today (UTC calendar day)
     now_utc = datetime.now(timezone.utc)

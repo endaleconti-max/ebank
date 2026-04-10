@@ -267,18 +267,18 @@ def test_daily_limit_integration_approved_multiple_tiers():
     """Multiple users with different tiers should be tracked independently."""
     db = SessionLocal()
 
-    # User 1: APPROVED, 400k today
-    insert_transfer(db, "u-approved-7", 400_000, TransferStatus.SETTLED, hours_ago=2)
+    # User 1: APPROVED, 1.5M today
+    insert_transfer(db, "u-approved-7", 1_500_000, TransferStatus.SETTLED, hours_ago=2)
 
     # User 2: NOT_STARTED, 15k today
     insert_transfer(db, "u-not-started-3", 15_000, TransferStatus.SETTLED, hours_ago=1)
 
-    # User 1 tries 150k more (550k total, exceeds APPROVED 500k limit)
+    # User 1 tries 600k more (2.1M total, exceeds APPROVED 2M limit)
     ok1, reason1 = check_daily_transfer_limits(
         db=db,
         sender_user_id="u-approved-7",
         kyc_status="APPROVED",
-        amount_minor=150_000,
+        amount_minor=600_000,
     )
 
     # User 2 tries 5k more (20k total, at NOT_STARTED 20k limit) -> should pass
