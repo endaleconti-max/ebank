@@ -5,6 +5,7 @@ All tests use monkeypatch to replace client methods with fakes that return
 DummyResponse objects — no real upstream services are needed.
 """
 import json
+from typing import Union
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +16,7 @@ client = TestClient(app)
 
 
 class DummyResponse:
-    def __init__(self, status_code: int, body: dict | list):
+    def __init__(self, status_code: int, body: Union[dict, list]):
         self.status_code = status_code
         self.content = json.dumps(body).encode()
 
