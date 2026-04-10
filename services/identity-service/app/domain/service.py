@@ -1,8 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domain.errors import DuplicateUserError, InvalidKycTransitionError, UserNotFoundError
-from app.domain.models import KycStatus, User
+from app.domain.errors import DuplicateUserError, InvalidAccountTransitionError, InvalidKycTransitionError, UserNotFoundError
+from app.domain.models import AccountAuditLog, AccountStatus, KycStatus, User
 from app.domain.compliance_client import screen_subject
 from app.config import settings
 
@@ -69,3 +69,71 @@ class IdentityService:
         self.db.commit()
         self.db.refresh(user)
         return user
+
+    # ── Account lifecycle ─────────────────────────────────────────────────────
+
+    def _transition_account_status(
+        self,
+        user_id: str,
+        allowed_from: set,
+        to_status: AccountStatus,
+        reason: str,
+        actor_id: str,
+    ) -> User:
+        user = self.get_user(user_id)
+        if user.account_status not in allowed_from:
+            raise InvalidAccountTransitionError(
+                f"cannot transition from {user.account_status} to {to_status}"
+            )
+        from_status = user.account_status
+        user.account_status = to_status
+        log = AccountAuditLog(
+            user_id=user_id,
+            from_status=from_status.value,
+            to_status=to_status.value,
+            reason=reason,
+            actor_id=actor_id,
+        )
+        self.db.add(log)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def suspend_account(self, user_id: str, reason: str, actor_id: str) -> User:
+        return self._transition_account_status(
+            user_id=user_id,
+            allowed_from={AccountStatus.ACTIVE},
+            to_status=AccountStatus.SUSPENDED,
+            reason=reason,
+            actor_id=actor_id,
+        )
+
+    def reinstate_account(self, user_id: str, reason: str, actor_id: str) -> User:
+        return self._transition_account_status(
+            user_id=user_id,
+            allowed_from={AccountStatus.SUSPENDED},
+            to_status=AccountStatus.ACTIVE,
+            reason=reason,
+            actor_id=actor_id,
+        )
+
+    def close_account(self, user_id: str, reason: str, actor_id: str) -> User:
+        return self._transition_account_status(
+            user_id=user_id,
+            allowed_from={AccountStatus.ACTIVE, AccountStatus.SUSPENDED},
+            to_status=AccountStatus.CLOSED,
+            reason=reason,
+            actor_id=actor_id,
+        )
+
+    def list_account_audit_log(self, user_id: str) -> list:
+        rows = (
+            self.db.execute(
+                select(AccountAuditLog)
+                .where(AccountAuditLog.user_id == user_id)
+                .order_by(AccountAuditLog.created_at)
+            )
+            .scalars()
+            .all()
+        )
+        return list(rows)

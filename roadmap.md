@@ -383,12 +383,16 @@ Immediate next implementation sequence:
 Pair 13 completion summary: Orchestrator prechecks now enforce a 4-step ordered gate — sender identity/KYC → recipient alias resolution → remote risk-service → local fallback rules — ensuring transfers are rejected at the earliest possible point if any upstream service signals a problem; all three HTTP clients use independent `_urlopen` module-level bindings so they can be patched in isolation during tests.
 
 Immediate next implementation sequence:
+1. ~~Expose risk-service through the API Gateway: add `RiskClient` in gateway (`app/clients/risk_client.py`), add 4 new permissions (`VIEW_RISK_RULES`, `MANAGE_RISK_RULES`, `VIEW_RISK_LOG`, `EVALUATE_RISK`), add 5 routes (`GET|POST /v1/risk/rules`, `DELETE /v1/risk/rules/{rule_id}`, `GET /v1/risk/log`, `POST /v1/risk/evaluate`) with correct permission gates and 502 on upstream 5xx.~~ ✓ Done — `app/clients/risk_client.py` scaffolded; 5 risk routes added to `api/routes.py`; 6 new gateway tests cover forwarding, payload capture, query param passthrough, and 502 propagation.
+2. ~~Expose compliance-service through the API Gateway: add `ComplianceClient` in gateway (`app/clients/compliance_client.py`), add 4 new permissions (`VIEW_COMPLIANCE_WATCHLIST`, `MANAGE_COMPLIANCE_WATCHLIST`, `VIEW_COMPLIANCE_LOG`, `SCREEN_COMPLIANCE_SUBJECT`), add 5 routes (`GET|POST /v1/compliance/watchlist`, `DELETE /v1/compliance/watchlist/{entry_id}`, `GET /v1/compliance/log`, `POST /v1/compliance/screen`).~~ ✓ Done — `app/clients/compliance_client.py` scaffolded; 5 compliance routes added; 9 new gateway tests pass; gateway test suite now 59 tests total.
+Pair 14 completion summary: Risk-service and compliance-service are now fully reachable via the API Gateway; all 8 newly defined permissions follow the least-privilege `domain:action` naming convention already established in the gateway; callers require distinct permissions to view vs mutate watchlist entries and to trigger a screening vs to view audit logs.
 
-## 2. Strategic Objectives
-1. Enable instant and reliable user-to-user payments via mobile numbers.
-2. Support regulated money movement through compliant banking/payment rails.
-3. Create a bank-agnostic platform that can onboard new financial institutions with minimal rework.
-4. Reach launch readiness in one market, then scale to additional banks and regions.
+Immediate next implementation sequence:
+1. ~~Add account lifecycle admin operations to identity-service: `suspend_account`, `reinstate_account`, `close_account` with valid state-machine transitions (ACTIVE→SUSPENDED, SUSPENDED→ACTIVE, ACTIVE|SUSPENDED→CLOSED); each transition is immutably logged in `AccountAuditLog` with actor ID and reason.~~ ✓ Done — added `InvalidAccountTransitionError`, `AccountAuditLog` model, `AccountStatusChangeRequest` + `AccountAuditLogEntry` schemas, `_transition_account_status()` helper in service, and 4 new routes (`POST /v1/users/{id}/suspend|reinstate|close`, `GET /v1/users/{id}/account-audit-log`); 20 new identity-service tests covering all transitions, 404/409/422 paths, actor propagation, and status reflection; total 29 identity-service tests.
+2. ~~Expose the 4 new account lifecycle routes through the API Gateway with 2 new permissions (`MANAGE_ACCOUNT_STATUS`, `VIEW_ACCOUNT_AUDIT_LOG`) and 4 new client methods on `IdentityClient`; 502 on upstream 5xx.~~ ✓ Done — client methods added, routes wired, 10 new gateway tests cover forwarding/409/404/502; gateway suite now 69 tests.
+Pair 15 completion summary: Operations teams can now suspend, reinstate, or permanently close accounts via the API Gateway with full audit trail; every transition is state-machine-guarded so invalid moves return 409; the actor identity (X-Caller-Id header) is captured in every audit log entry enabling accountability for every account action.
+
+Immediate next implementation sequence:
 
 ## 3. Product Scope
 ### In Scope (MVP)

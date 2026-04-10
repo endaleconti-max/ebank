@@ -12,3 +12,7 @@ class DuplicateUserError(DomainError):
 
 class InvalidKycTransitionError(DomainError):
     pass
+
+
+class InvalidAccountTransitionError(DomainError):
+    pass

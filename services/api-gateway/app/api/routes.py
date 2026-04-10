@@ -366,6 +366,42 @@ async def submit_kyc(user_id: str, payload: dict, request: Request):
     return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
 
 
+@router.post("/users/{user_id}/suspend")
+async def suspend_user(user_id: str, payload: dict, request: Request):
+    _authorize(request, Permission.MANAGE_ACCOUNT_STATUS)
+    resp = await _identity_client.suspend_account(user_id=user_id, payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream identity unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.post("/users/{user_id}/reinstate")
+async def reinstate_user(user_id: str, payload: dict, request: Request):
+    _authorize(request, Permission.MANAGE_ACCOUNT_STATUS)
+    resp = await _identity_client.reinstate_account(user_id=user_id, payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream identity unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.post("/users/{user_id}/close")
+async def close_user(user_id: str, payload: dict, request: Request):
+    _authorize(request, Permission.MANAGE_ACCOUNT_STATUS)
+    resp = await _identity_client.close_account(user_id=user_id, payload=payload, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream identity unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
+@router.get("/users/{user_id}/account-audit-log")
+async def get_account_audit_log(user_id: str, request: Request):
+    _authorize(request, Permission.VIEW_ACCOUNT_AUDIT_LOG)
+    resp = await _identity_client.get_account_audit_log(user_id=user_id, headers=_forward_headers(request))
+    if resp.status_code >= 500:
+        raise HTTPException(status_code=502, detail="upstream identity unavailable")
+    return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
 # ── Alias routes ──────────────────────────────────────────────────────────────
 
 @router.post("/aliases/verify-phone")

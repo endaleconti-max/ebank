@@ -26,3 +26,27 @@ class IdentityClient:
                 json=payload,
                 headers=headers,
             )
+
+    async def suspend_account(self, user_id: str, payload: dict, headers: dict) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await client.post(
+                f"{self.base_url}/v1/users/{user_id}/suspend", json=payload, headers=headers
+            )
+
+    async def reinstate_account(self, user_id: str, payload: dict, headers: dict) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await client.post(
+                f"{self.base_url}/v1/users/{user_id}/reinstate", json=payload, headers=headers
+            )
+
+    async def close_account(self, user_id: str, payload: dict, headers: dict) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await client.post(
+                f"{self.base_url}/v1/users/{user_id}/close", json=payload, headers=headers
+            )
+
+    async def get_account_audit_log(self, user_id: str, headers: dict) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await client.get(
+                f"{self.base_url}/v1/users/{user_id}/account-audit-log", headers=headers
+            )

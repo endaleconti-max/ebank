@@ -38,6 +38,8 @@ class Permission(str, Enum):
     CREATE_USER = "identity:create_user"
     VIEW_USER = "identity:view_user"
     SUBMIT_KYC = "identity:submit_kyc"
+    MANAGE_ACCOUNT_STATUS = "identity:manage_account_status"
+    VIEW_ACCOUNT_AUDIT_LOG = "identity:view_account_audit_log"
     
     VIEW_ALIASES = "alias:view"
     MANAGE_ALIASES = "alias:manage"
