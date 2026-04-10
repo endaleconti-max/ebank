@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.routes import IDEMPOTENCY_CACHE
 from app.infrastructure.db import Base, engine
 from app.main import app
 
@@ -18,6 +19,7 @@ client = TestClient(app)
 def reset_state():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    IDEMPOTENCY_CACHE.clear()
 
 
 def _create_and_submit(full_name: str = "Test User") -> str:
@@ -33,7 +35,10 @@ def _create_and_submit(full_name: str = "Test User") -> str:
     assert user_resp.status_code == 201
     user_id = user_resp.json()["user_id"]
 
-    submit_resp = client.post(f"/v1/users/{user_id}/kyc/submit")
+    submit_resp = client.post(
+        f"/v1/users/{user_id}/kyc/submit",
+        json={"provider_case_id": "case-001"},
+    )
     assert submit_resp.json()["kyc_status"] == "SUBMITTED"
     return user_id
 
