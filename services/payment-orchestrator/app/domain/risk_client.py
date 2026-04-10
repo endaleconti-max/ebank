@@ -12,6 +12,7 @@ from typing import Optional, Tuple
 
 import urllib.request
 import urllib.error
+from urllib.request import urlopen as _urlopen
 import json
 
 from app.config import settings
@@ -57,7 +58,7 @@ def call_risk_service(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=settings.risk_service_timeout_seconds) as resp:
+        with _urlopen(req, timeout=settings.risk_service_timeout_seconds) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             decision = body.get("decision", "allow")
             reason = body.get("reason")

@@ -41,7 +41,7 @@ def test_all_checks_pass_when_services_disabled(monkeypatch):
 
 def _mock_identity(account_status: str, kyc_status: str):
     """Return a context manager that patches urlopen for an identity-service status call."""
-    return patch("app.domain.identity_client.urllib.request.urlopen")
+    return patch("app.domain.identity_client._urlopen")
 
 
 def _configure_identity_mock(mock_open, account_status: str, kyc_status: str):
@@ -56,7 +56,7 @@ def test_sender_inactive_account_blocked(monkeypatch):
     monkeypatch.setattr("app.domain.identity_client.settings.identity_service_enabled", True)
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", False)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
-    with patch("app.domain.identity_client.urllib.request.urlopen") as mock_open:
+    with patch("app.domain.identity_client._urlopen") as mock_open:
         _configure_identity_mock(mock_open, "SUSPENDED", "APPROVED")
         ok, reason = _run()
     assert ok is False
@@ -68,7 +68,7 @@ def test_sender_kyc_not_approved_blocked(monkeypatch):
     monkeypatch.setattr("app.domain.identity_client.settings.identity_service_enabled", True)
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", False)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
-    with patch("app.domain.identity_client.urllib.request.urlopen") as mock_open:
+    with patch("app.domain.identity_client._urlopen") as mock_open:
         _configure_identity_mock(mock_open, "ACTIVE", "SUBMITTED")
         ok, reason = _run()
     assert ok is False
@@ -79,7 +79,7 @@ def test_sender_active_and_approved_passes(monkeypatch):
     monkeypatch.setattr("app.domain.identity_client.settings.identity_service_enabled", True)
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", False)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
-    with patch("app.domain.identity_client.urllib.request.urlopen") as mock_open:
+    with patch("app.domain.identity_client._urlopen") as mock_open:
         _configure_identity_mock(mock_open, "ACTIVE", "APPROVED")
         ok, reason = _run()
     assert ok is True
@@ -91,7 +91,7 @@ def test_identity_unavailable_allow_policy_passes(monkeypatch):
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", False)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
     with patch(
-        "app.domain.identity_client.urllib.request.urlopen",
+        "app.domain.identity_client._urlopen",
         side_effect=urllib.error.URLError("refused"),
     ):
         ok, reason = _run()
@@ -104,7 +104,7 @@ def test_identity_unavailable_deny_policy_fails(monkeypatch):
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", False)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
     with patch(
-        "app.domain.identity_client.urllib.request.urlopen",
+        "app.domain.identity_client._urlopen",
         side_effect=urllib.error.URLError("refused"),
     ):
         ok, reason = _run()
@@ -127,7 +127,7 @@ def test_recipient_alias_found_passes(monkeypatch):
     monkeypatch.setattr("app.domain.identity_client.settings.identity_service_enabled", False)
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", True)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
-    with patch("app.domain.alias_client.urllib.request.urlopen") as mock_open:
+    with patch("app.domain.alias_client._urlopen") as mock_open:
         _configure_alias_mock(mock_open, "user-recipient", "alias-xyz")
         ok, reason = _run()
     assert ok is True
@@ -138,7 +138,7 @@ def test_recipient_alias_not_found_blocks(monkeypatch):
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", True)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
     err = urllib.error.HTTPError(url="", code=404, msg="Not Found", hdrs=None, fp=None)
-    with patch("app.domain.alias_client.urllib.request.urlopen", side_effect=err):
+    with patch("app.domain.alias_client._urlopen", side_effect=err):
         ok, reason = _run()
     assert ok is False
     assert "recipient_alias_not_found" in reason
@@ -148,7 +148,7 @@ def test_recipient_alias_empty_user_id_blocks(monkeypatch):
     monkeypatch.setattr("app.domain.identity_client.settings.identity_service_enabled", False)
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", True)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
-    with patch("app.domain.alias_client.urllib.request.urlopen") as mock_open:
+    with patch("app.domain.alias_client._urlopen") as mock_open:
         _configure_alias_mock(mock_open, "", "")
         ok, reason = _run()
     assert ok is False
@@ -161,7 +161,7 @@ def test_alias_unavailable_allow_policy_passes(monkeypatch):
     monkeypatch.setattr("app.domain.prechecks.settings.alias_service_fallback_policy", "allow")
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
     with patch(
-        "app.domain.alias_client.urllib.request.urlopen",
+        "app.domain.alias_client._urlopen",
         side_effect=urllib.error.URLError("refused"),
     ):
         ok, reason = _run()
@@ -174,7 +174,7 @@ def test_alias_unavailable_deny_policy_fails(monkeypatch):
     monkeypatch.setattr("app.domain.prechecks.settings.alias_service_fallback_policy", "deny")
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", False)
     with patch(
-        "app.domain.alias_client.urllib.request.urlopen",
+        "app.domain.alias_client._urlopen",
         side_effect=urllib.error.URLError("refused"),
     ):
         ok, reason = _run()
@@ -190,9 +190,9 @@ def test_all_services_enabled_full_happy_path(monkeypatch):
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", True)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", True)
 
-    with patch("app.domain.identity_client.urllib.request.urlopen") as id_mock, \
-         patch("app.domain.alias_client.urllib.request.urlopen") as alias_mock, \
-         patch("app.domain.risk_client.urllib.request.urlopen") as risk_mock:
+    with patch("app.domain.identity_client._urlopen") as id_mock, \
+         patch("app.domain.alias_client._urlopen") as alias_mock, \
+         patch("app.domain.risk_client._urlopen") as risk_mock:
 
         _configure_identity_mock(id_mock, "ACTIVE", "APPROVED")
         _configure_alias_mock(alias_mock, "user-recipient", "alias-abc")
@@ -211,8 +211,8 @@ def test_all_services_enabled_blocked_by_identity(monkeypatch):
     monkeypatch.setattr("app.domain.alias_client.settings.alias_service_enabled", True)
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", True)
 
-    with patch("app.domain.identity_client.urllib.request.urlopen") as id_mock, \
-         patch("app.domain.alias_client.urllib.request.urlopen") as alias_mock:
+    with patch("app.domain.identity_client._urlopen") as id_mock, \
+         patch("app.domain.alias_client._urlopen") as alias_mock:
 
         _configure_identity_mock(id_mock, "ACTIVE", "NOT_STARTED")
         # alias mock should NOT be called; if it is, we want it to succeed anyway

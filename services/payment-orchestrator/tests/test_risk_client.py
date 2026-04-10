@@ -82,7 +82,7 @@ def test_local_precheck_denies_blocked_recipient(monkeypatch):
 def test_remote_deny_fails_precheck(monkeypatch):
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", True)
     with patch(
-        "app.domain.risk_client.urllib.request.urlopen"
+        "app.domain.risk_client._urlopen"
     ) as mock_open:
         mock_open.return_value.__enter__ = lambda s: s
         mock_open.return_value.__exit__ = lambda s, *a: False
@@ -99,7 +99,7 @@ def test_remote_deny_fails_precheck(monkeypatch):
 def test_remote_allow_passes_precheck(monkeypatch):
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", True)
     with patch(
-        "app.domain.risk_client.urllib.request.urlopen"
+        "app.domain.risk_client._urlopen"
     ) as mock_open:
         mock_open.return_value.__enter__ = lambda s: s
         mock_open.return_value.__exit__ = lambda s, *a: False
@@ -114,7 +114,7 @@ def test_remote_allow_passes_precheck(monkeypatch):
 def test_remote_review_passes_precheck(monkeypatch):
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", True)
     with patch(
-        "app.domain.risk_client.urllib.request.urlopen"
+        "app.domain.risk_client._urlopen"
     ) as mock_open:
         mock_open.return_value.__enter__ = lambda s: s
         mock_open.return_value.__exit__ = lambda s, *a: False
@@ -131,7 +131,7 @@ def test_remote_unavailable_falls_back_to_local_allow(monkeypatch):
     import urllib.error
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", True)
     with patch(
-        "app.domain.risk_client.urllib.request.urlopen",
+        "app.domain.risk_client._urlopen",
         side_effect=urllib.error.URLError("connection refused"),
     ):
         ok, reason = _run(amount=500)  # within local limit
@@ -143,7 +143,7 @@ def test_remote_unavailable_falls_back_to_local_deny(monkeypatch):
     import urllib.error
     monkeypatch.setattr("app.domain.risk_client.settings.risk_service_enabled", True)
     with patch(
-        "app.domain.risk_client.urllib.request.urlopen",
+        "app.domain.risk_client._urlopen",
         side_effect=urllib.error.URLError("connection refused"),
     ):
         ok, reason = _run(sender="blocked-userX")

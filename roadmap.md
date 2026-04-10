@@ -378,7 +378,11 @@ Immediate next implementation sequence:
 Pair 12 completion summary: Sanctions screening is now a standalone service with fuzzy name matching and soft-delete watchlist management; KYC approval in identity-service is gated by sanctions checks with configurable fallback behaviour.
 
 Immediate next implementation sequence:
-Build a secure payment app where people can send and receive money using a mobile number, while enabling scalable connectivity to banks through a unified integration layer.
+1. ~~Add sender KYC and account-status verification into orchestrator prechecks by calling identity-service (`GET /v1/users/{user_id}/status`); block transfers if account is not ACTIVE or KYC is not APPROVED; configurable fallback policy on service unavailability.~~ ✓ Done — added `app/domain/identity_client.py` to orchestrator (urllib, `identity_service_enabled` gate, `_urlopen` module-level binding for independent patching); `run_prechecks()` performs identity check as step 1 before alias and risk checks; 7 new tests cover all account/KYC/fallback paths.
+2. ~~Add recipient alias resolution check into orchestrator prechecks by calling alias-service (`GET /v1/aliases/resolve?phone_e164=...`); distinguish 404 not-found from connection error; block if alias is absent; configurable fallback policy.~~ ✓ Done — added `app/domain/alias_client.py` to orchestrator (HTTP 404 → `("","")` safe not-found signal vs URLError → None service-unavailable); `run_prechecks()` performs alias check as step 2; 9 new tests cover found/not-found/unavailable/fallback paths; all 52 orchestrator tests passing.
+Pair 13 completion summary: Orchestrator prechecks now enforce a 4-step ordered gate — sender identity/KYC → recipient alias resolution → remote risk-service → local fallback rules — ensuring transfers are rejected at the earliest possible point if any upstream service signals a problem; all three HTTP clients use independent `_urlopen` module-level bindings so they can be patched in isolation during tests.
+
+Immediate next implementation sequence:
 
 ## 2. Strategic Objectives
 1. Enable instant and reliable user-to-user payments via mobile numbers.

@@ -11,6 +11,7 @@ import logging
 import urllib.error
 import urllib.parse
 import urllib.request
+from urllib.request import urlopen as _urlopen
 from typing import Optional, Tuple
 
 from app.config import settings
@@ -44,7 +45,7 @@ def resolve_alias(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=settings.alias_service_timeout_seconds) as resp:
+        with _urlopen(req, timeout=settings.alias_service_timeout_seconds) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             user_id = body.get("user_id") or ""
             alias_id = body.get("alias_id") or ""

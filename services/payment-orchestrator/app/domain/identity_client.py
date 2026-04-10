@@ -9,6 +9,7 @@ import json
 import logging
 import urllib.error
 import urllib.request
+from urllib.request import urlopen as _urlopen
 from typing import Optional, Tuple
 
 from app.config import settings
@@ -38,7 +39,7 @@ def get_user_status(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=settings.identity_service_timeout_seconds) as resp:
+        with _urlopen(req, timeout=settings.identity_service_timeout_seconds) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             return body.get("account_status"), body.get("kyc_status")
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
