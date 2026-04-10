@@ -29,7 +29,31 @@ def run_prechecks(
     note: Optional[str],
     caller_id: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
-    # Attempt remote risk-service first; fall back to local checks on failure.
+    # ── 1. Sender KYC / account status check ─────────────────────────────────
+    id_result = get_user_status(sender_user_id, caller_id=caller_id)
+    if id_result is not None:
+        account_status, kyc_status = id_result
+        if account_status != "ACTIVE":
+            return False, f"sender_account_not_active: {account_status}"
+        if kyc_status != "APPROVED":
+            return False, f"sender_kyc_not_approved: {kyc_status}"
+    else:
+        # Service unavailable
+        if settings.identity_service_fallback_policy == "deny":
+            return False, "identity_service_unavailable: fallback_deny"
+
+    # ── 2. Recipient alias resolution check ──────────────────────────────────
+    alias_result = resolve_alias(recipient_phone_e164, caller_id=caller_id)
+    if alias_result is not None:
+        user_id, alias_id = alias_result
+        if not user_id:
+            return False, "recipient_alias_not_found"
+    else:
+        # Service unavailable
+        if settings.alias_service_fallback_policy == "deny":
+            return False, "alias_service_unavailable: fallback_deny"
+
+    # ── 3. Remote risk-service (first-match-wins rules) ───────────────────────
     result = call_risk_service(
         sender_user_id=sender_user_id,
         recipient_phone_e164=recipient_phone_e164,
@@ -41,12 +65,9 @@ def run_prechecks(
         decision, reason = result
         if decision == "deny":
             return False, f"risk_service_denied: {reason}"
-        if decision == "review":
-            # review means pass validation but surface the reason
-            return True, None
-        return True, None  # allow
+        return True, None  # allow or review
 
-    # Local fallback
+    # ── 4. Local fallback checks ──────────────────────────────────────────────
     risk_ok, risk_reason = run_risk_precheck(amount_minor=amount_minor, note=note)
     if not risk_ok:
         return False, risk_reason
